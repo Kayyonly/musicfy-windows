@@ -1,0 +1,10 @@
+# Gradle output and local runtime logs
+.gradle/
+build/
+
+# Python test-helper bytecode
+__pycache__/
+*.pyc
+
+# Generated, original sine-wave fixtures (do not commit test binaries)
+test-media/
