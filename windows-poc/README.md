@@ -70,15 +70,40 @@ If Musicfy needs only the documented MP3/AAC and standard HLS profiles over ordi
 - Resolved runtime dependencies: JavaFX controls/media `21.0.12`; `vlcj 4.12.1` → `vlcj-natives 4.12.0` → JNA/JNA-platform `5.16.0`. The fork's root [`LICENSE`](../LICENSE) is GNU GPL v3.
 - No secrets/cookies/provider keys are part of the PoC. Never paste credential-bearing provider URLs into a committed file or test log.
 
+## LibVLC audio-output and COM diagnostics
+
+On Windows, the LibVLC adapter requests DirectSound at instance startup using `--aout=directsound`, passed through vlcj 4.x's `MediaPlayerFactory` arguments. This is a diagnostic configuration, not evidence that the output initialized or that sound was heard. To compare the installed VLC 3.x runtime, set `MUSICFY_VLC_AOUT` to `directsound`, `mmdevice`, or `default` before launching. `default` omits the `--aout` argument so LibVLC chooses its default module. A build without the selected module may reject the startup option; the harness intentionally reports that initialization error instead of silently falling back.
+
+The `mmdevice audio output error: cannot initialize COM (error 0x80010106)` message is not proof that DirectSound will fix playback. Microsoft documents `RPC_E_CHANGED_MODE` as an incompatible COM concurrency model already initialized on that same thread. This PoC does not call `CoInitializeEx` itself. vlcj callbacks arrive on native threads; they only publish to the JavaFX thread, and player controls plus factory/player release are kept on that UI thread. Do not add speculative COM initialization calls. Compare the output choices on the target Windows machine and retain the complete native VLC log.
+
+The smoke test waits asynchronously for an actual position update near the requested midpoint, with a bounded tolerance, and rejects ordinary forward progress as proof of a seek. It also waits for the second track's `mediaPlayerReady`/`READY` event and its own `PLAYING` status; buffering alone is not sufficient. `SMOKE RESULT: PASS` proves only the observed state/events, never audible output.
+
 ## Windows runner procedure
 
 1. Use a Windows x64 runner with JDK 21, Python 3, and FFmpeg. To test LibVLC, install a matching VLC 3.x x64 runtime and set `$env:VLC_HOME` to the installation directory. Do not mix VLC 4 development files with vlcj 4.12.1.
 2. Generate samples with `python .\scripts\generate_test_media.py`, then run `powershell -ExecutionPolicy Bypass -File .\windows-smoke.ps1` from this directory. If VLC is installed elsewhere, set `$env:VLC_HOME` first.
-3. Run the two automated local-file smoke commands above, one engine at a time. `SMOKE RESULT: PASS` means the harness observed pause, seek, next-track, and a playing state; still verify audible output and repeat with both local sample formats.
-4. Test each engine with the HTTP URLs and HLS playlist in the UI. Record displayed status and whether audio is audible. Test seeks near the start/middle/end; HLS live streams may have different seek semantics than these VOD fixtures.
-5. For a deliberate one-time failure, run `python .\scripts\http_fixture.py --root .\test-media --port 8765 --fail-first /sample.mp3` in place of the normal server; observe the first 401 and check whether manual Retry recovers.
-6. For custom-header validation, run the fixture with `--require-header X-PoC-Only=musicfy-test`. Inspect actual outgoing requests or use a non-production provider test endpoint. This PoC does not claim arbitrary header injection; a local proxy/signed-URL workaround needs its own end-to-end test.
-7. For memory and distribution, capture idle/playing working set and private bytes with Windows Performance Monitor. Inspect packaged files for JavaFX native modules (JavaFX route), or `libvlc.dll`, `libvlccore.dll`, and the complete compatible plugin tree (LibVLC route). Record OS/architecture, JDK, JavaFX, vlcj, LibVLC, and plugin versions.
+3. Run the two automated local-file smoke commands above, one engine at a time. A pass means the harness observed pause, an actual seek result, and the second track's event plus `PLAYING` state. It does not establish audible playback; verify the speakers/headphones manually with both local sample formats.
+4. For each LibVLC audio-output option, run this PowerShell command from `windows-poc` after generating the fixtures. Capture the startup options and all native VLC messages, including COM/audio errors, for each run:
+
+   ```powershell
+   # DirectSound
+   $env:MUSICFY_VLC_AOUT = "directsound"
+   .\gradlew.bat run --args="--smoke vlc .\test-media\sample.mp3 .\test-media\sample.m4a"
+
+   # LibVLC default output
+   $env:MUSICFY_VLC_AOUT = "default"
+   .\gradlew.bat run --args="--smoke vlc .\test-media\sample.mp3 .\test-media\sample.m4a"
+
+   # Windows Media Device (MMDevice)
+   $env:MUSICFY_VLC_AOUT = "mmdevice"
+   .\gradlew.bat run --args="--smoke vlc .\test-media\sample.mp3 .\test-media\sample.m4a"
+
+   Remove-Item Env:MUSICFY_VLC_AOUT
+   ```
+5. Test each engine with the HTTP URLs and HLS playlist in the UI. Record displayed status and whether audio is audible. Test seeks near the start/middle/end; HLS live streams may have different seek semantics than these VOD fixtures.
+6. For a deliberate one-time failure, run `python .\scripts\http_fixture.py --root .\test-media --port 8765 --fail-first /sample.mp3` in place of the normal server; observe the first 401 and check whether manual Retry recovers.
+7. For custom-header validation, run the fixture with `--require-header X-PoC-Only=musicfy-test`. Inspect actual outgoing requests or use a non-production provider test endpoint. This PoC does not claim arbitrary header injection; a local proxy/signed-URL workaround needs its own end-to-end test.
+8. For memory and distribution, capture idle/playing working set and private bytes with Windows Performance Monitor. Inspect packaged files for JavaFX native modules (JavaFX route), or `libvlc.dll`, `libvlccore.dll`, and the complete compatible plugin tree (LibVLC route). Record OS/architecture, JDK, JavaFX, vlcj, LibVLC, and plugin versions.
 
 ## Sources
 
@@ -87,10 +112,14 @@ If Musicfy needs only the documented MP3/AAC and standard HLS profiles over ordi
 - [OpenJFX project](https://openjfx.io/) — OpenJFX licensing statement (GPL with the Classpath Exception).
 - [vlcj 4.12.1 release POM](https://repo.maven.apache.org/maven2/uk/co/caprica/vlcj/4.12.1/vlcj-4.12.1.pom) — exact version, Java target, GPL v3 metadata, and `vlcj-natives` dependency.
 - [vlcj 4.x README](https://raw.githubusercontent.com/caprica/vlcj/vlcj-4.x/README.md) — JDK 11+, minimum VLC 3.0, Windows support, callback threading warning, and GPL v3-or-later statement.
+- [vlcj 4.x Media Info tutorial](https://capricasoftware.co.uk/tutorials/vlcj/4/media-info) — recommends waiting for `mediaPlayerReady` when checking media state instead of treating `playing` as readiness.
 - [vlcj-natives 4.12.0 POM](https://repo.maven.apache.org/maven2/uk/co/caprica/vlcj-natives/4.12.0/vlcj-natives-4.12.0.pom) — transitive native binding dependency and GPL v3 metadata.
 - [JNA 5.16.0 POM](https://repo.maven.apache.org/maven2/net/java/dev/jna/jna-jpms/5.16.0/jna-jpms-5.16.0.pom) — declares LGPL-2.1-or-later or Apache-2.0.
 - [vlcj project README](https://github.com/caprica/vlcj) — distinguish vlcj 5/LibVLC 4 development notes from stable vlcj 4.
 - [LibVLC media options API](https://videolan.videolan.me/vlc-3.0/group__libvlc__media.html) — per-media options and warning that option names/semantics vary across builds.
+- [LibVLC 3.0 `libvlc_new` API](https://videolan.videolan.me/vlc-3.0/group__libvlc__core.html) — accepts VLC command-line-like startup arguments; validity depends on build, platform, and plugins, and is not guaranteed across versions.
+- [VLC 3.0 DirectSound module](https://github.com/videolan/vlc-3.0/blob/master/modules/audio_output/directsound.c) — confirms the `directsound` module alias used by the startup option.
+- [Microsoft `CoInitializeEx` reference](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex) — defines `RPC_E_CHANGED_MODE` as an incompatible COM concurrency model already initialized on the calling thread.
 - [VideoLAN LibVLC overview](https://www.videolan.org/vlc/libvlc.html) — platform and LibVLC core license overview.
 
 This is an engineering comparison, not legal advice. Review exact dependencies, native libraries, codecs/plugins, and notices before redistribution.

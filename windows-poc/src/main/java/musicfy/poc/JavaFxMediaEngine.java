@@ -87,25 +87,28 @@ final class JavaFxMediaEngine implements PlaybackEngine {
         disposePlayer();
         loaded = true;
         String source = toMediaUri(queue.get(index));
+        String trackLabel = "item " + (index + 1) + "/" + queue.size();
         listener.onStatus("Opening item " + (index + 1) + "/" + queue.size() + " (JavaFX Media)");
 
         try {
             Media media = new Media(source);
-            media.setOnError(() -> listener.onStatus("Media error: " + safeMessage(media.getError())));
+            media.setOnError(() -> listener.onStatus("Media error — JavaFX Media " + trackLabel
+                    + ": " + safeMessage(media.getError())));
             MediaPlayer next = new MediaPlayer(media);
             player = next;
             next.setOnReady(() -> {
                 if (player != next) return;
-                listener.onStatus("READY — JavaFX Media");
+                listener.onStatus("READY — JavaFX Media " + trackLabel);
                 publishPosition(next);
                 if (autoplay) next.play();
             });
             next.setOnError(() -> {
-                if (player == next) listener.onStatus("Playback error: " + safeMessage(next.getError()));
+                if (player == next) listener.onStatus("Playback error — JavaFX Media " + trackLabel
+                        + ": " + safeMessage(next.getError()));
             });
             next.setOnEndOfMedia(() -> next());
             next.statusProperty().addListener((obs, oldStatus, newStatus) -> {
-                if (player == next) listener.onStatus("JavaFX Media: " + newStatus);
+                if (player == next) listener.onStatus("JavaFX Media " + trackLabel + ": " + newStatus);
             });
             next.currentTimeProperty().addListener((obs, oldTime, newTime) -> {
                 if (player == next) publishPosition(next);

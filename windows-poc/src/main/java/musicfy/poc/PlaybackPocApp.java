@@ -3,6 +3,7 @@ package musicfy.poc;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.animation.KeyFrame;
+import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
@@ -23,6 +24,12 @@ import java.util.List;
 
 /** Minimal test harness only; this is not the Musicfy product UI. */
 public final class PlaybackPocApp extends Application {
+    private static final long SEEK_TOLERANCE_MIN_MS = 500;
+    private static final long SEEK_TOLERANCE_MAX_MS = 1000;
+    private static final int SMOKE_POLL_INTERVAL_MS = 100;
+    private static final int SMOKE_SEEK_TIMEOUT_MS = 4000;
+    private static final int SMOKE_NEXT_TIMEOUT_MS = 10000;
+
     private final ComboBox<String> backend = new ComboBox<>();
     private final TextArea sources = new TextArea();
     private final Label status = new Label("Choose an engine and enter test media URIs");
@@ -34,8 +41,16 @@ public final class PlaybackPocApp extends Application {
     private long durationMillis;
     private long currentMillis;
     private long smokeSeekTarget;
-    private boolean smokeSeekRequested;
+    private long smokeSeekTolerance;
+    private long smokeSeekBaseline;
+    private long smokeSeekRequestedAtNanos;
     private boolean smokeSeeked;
+    private boolean smokePauseSeen;
+    private int smokeNextStartEventIndex;
+    private Timeline smokeSeekPoller;
+    private Timeline smokeNextTrackPoller;
+    private PauseTransition smokeSeekResume;
+    private PauseTransition smokeAdvanceToNext;
     private String latestStatus = "";
 
     @Override
@@ -111,7 +126,9 @@ public final class PlaybackPocApp extends Application {
             status.setText("Ready — " + name);
         } catch (RuntimeException | LinkageError ex) {
             engine = null;
-            status.setText("Could not initialize " + name + ": " + safeMessage(ex));
+            String message = "Could not initialize " + name + ": " + safeMessage(ex);
+            System.err.println("[poc] " + message);
+            status.setText(message);
         }
     }
 
@@ -129,49 +146,127 @@ public final class PlaybackPocApp extends Application {
             finishSmoke(false);
             return;
         }
+        smokeEvents.clear();
+        latestStatus = "";
+        smokeSeeked = false;
+        smokePauseSeen = false;
+        smokeNextStartEventIndex = 0;
         startQueue();
-        Timeline timeline = new Timeline(
+        Timeline pauseAndSeek = new Timeline(
                 new KeyFrame(Duration.seconds(2.5), e -> withEngine(PlaybackEngine::pause)),
-                new KeyFrame(Duration.seconds(3.2), e -> {
-                    boolean paused = smokeEvents.stream().anyMatch(s -> s.contains("PAUSED"));
-                    System.out.println("SMOKE pause=" + paused + " status=" + latestStatus);
-                    boolean seekAvailable = canSeek && durationMillis > 0;
-                    System.out.println("SMOKE seekAvailable=" + seekAvailable + " durationMs=" + durationMillis);
-                    if (seekAvailable) {
-                        smokeSeekTarget = durationMillis / 2;
-                        smokeSeekRequested = true;
-                        engine.seek(smokeSeekTarget);
-                    }
-                }),
-                new KeyFrame(Duration.seconds(4.0), e -> {
-                    smokeSeeked = smokeSeekRequested && Math.abs(currentMillis - smokeSeekTarget) < 1500;
-                    System.out.println("SMOKE seeked=" + smokeSeeked + " currentMs=" + currentMillis
-                            + " targetMs=" + smokeSeekTarget);
-                    withEngine(PlaybackEngine::play);
-                }),
-                new KeyFrame(Duration.seconds(5.0), e -> withEngine(PlaybackEngine::next)),
-                new KeyFrame(Duration.seconds(8.5), e -> {
-                    int nextOpenedAt = -1;
-                    for (int i = 0; i < smokeEvents.size(); i++) {
-                        if (smokeEvents.get(i).contains("Opening item 2/")) {
-                            nextOpenedAt = i;
-                            break;
-                        }
-                    }
-                    boolean nextOpened = nextOpenedAt >= 0;
-                    boolean nextPlaying = nextOpened && smokeEvents.subList(nextOpenedAt + 1, smokeEvents.size())
-                            .stream().anyMatch(s -> s.contains("PLAYING"));
-                    boolean pauseSeen = smokeEvents.stream().anyMatch(s -> s.contains("PAUSED"));
-                    System.out.println("SMOKE nextOpened=" + nextOpened + " nextPlaying=" + nextPlaying
-                            + " pausedEvent=" + pauseSeen + " seeked=" + smokeSeeked + " currentStatus=" + latestStatus);
-                    finishSmoke(nextOpened && pauseSeen && smokeSeeked && nextPlaying);
-                })
+                new KeyFrame(Duration.seconds(3.2), e -> beginSmokeSeek())
         );
-        timeline.play();
+        pauseAndSeek.play();
+    }
+
+    private void beginSmokeSeek() {
+        smokePauseSeen = smokeEvents.stream().anyMatch(s -> s.contains("PAUSED"));
+        System.out.println("SMOKE pauseEvent=" + smokePauseSeen + " status=" + latestStatus);
+        boolean seekAvailable = canSeek && durationMillis > 0;
+        System.out.println("SMOKE seekAvailable=" + seekAvailable + " durationMs=" + durationMillis);
+        if (!seekAvailable) {
+            System.out.println("SMOKE seekReached=false reason=duration-or-seekability-unavailable");
+            finishSmoke(false);
+            return;
+        }
+
+        smokeSeekTarget = durationMillis / 2;
+        smokeSeekTolerance = Math.max(SEEK_TOLERANCE_MIN_MS,
+                Math.min(SEEK_TOLERANCE_MAX_MS, durationMillis / 20));
+        smokeSeekBaseline = currentMillis;
+        smokeSeekRequestedAtNanos = System.nanoTime();
+        engine.seek(smokeSeekTarget);
+        System.out.println("SMOKE seekRequested=true targetMs=" + smokeSeekTarget
+                + " baselineMs=" + smokeSeekBaseline + " toleranceMs=" + smokeSeekTolerance);
+
+        smokeSeekPoller = new Timeline(new KeyFrame(Duration.millis(SMOKE_POLL_INTERVAL_MS), e -> pollSmokeSeek()));
+        smokeSeekPoller.setCycleCount(SMOKE_SEEK_TIMEOUT_MS / SMOKE_POLL_INTERVAL_MS);
+        smokeSeekPoller.setOnFinished(e -> {
+            if (!smokeSeeked) {
+                System.out.println("SMOKE seekReached=false actualMs=" + currentMillis
+                        + " targetMs=" + smokeSeekTarget + " timeoutMs=" + SMOKE_SEEK_TIMEOUT_MS);
+                finishSmoke(false);
+            }
+        });
+        smokeSeekPoller.play();
+
+        // Some backends only publish timeChanged after playback resumes; keep observing actual position.
+        smokeSeekResume = new PauseTransition(Duration.millis(250));
+        smokeSeekResume.setOnFinished(e -> withEngine(PlaybackEngine::play));
+        smokeSeekResume.play();
+    }
+
+    private void pollSmokeSeek() {
+        long actual = currentMillis;
+        long elapsedMs = (System.nanoTime() - smokeSeekRequestedAtNanos) / 1_000_000;
+        long expectedWithoutSeek = smokeSeekBaseline + Math.max(0, elapsedMs - 250);
+        boolean positionJumped = actual > expectedWithoutSeek + smokeSeekTolerance;
+        if (positionJumped && Math.abs(actual - smokeSeekTarget) <= smokeSeekTolerance) {
+            smokeSeeked = true;
+            if (smokeSeekPoller != null) smokeSeekPoller.stop();
+            System.out.println("SMOKE seekReached=true actualMs=" + actual + " targetMs=" + smokeSeekTarget
+                    + " toleranceMs=" + smokeSeekTolerance);
+            smokeAdvanceToNext = new PauseTransition(Duration.millis(350));
+            smokeAdvanceToNext.setOnFinished(e -> beginSmokeNextTrack());
+            smokeAdvanceToNext.play();
+        }
+    }
+
+    private void beginSmokeNextTrack() {
+        smokeNextStartEventIndex = smokeEvents.size();
+        withEngine(PlaybackEngine::next);
+
+        smokeNextTrackPoller = new Timeline(new KeyFrame(
+                Duration.millis(SMOKE_POLL_INTERVAL_MS), e -> pollSmokeNextTrack()));
+        smokeNextTrackPoller.setCycleCount(SMOKE_NEXT_TIMEOUT_MS / SMOKE_POLL_INTERVAL_MS);
+        smokeNextTrackPoller.setOnFinished(e -> {
+            boolean readyEvent = hasSecondTrackReadyEvent();
+            boolean playingEvent = hasSecondTrackPlayingStatus();
+            System.out.println("SMOKE nextTrackTimeout=true track2Event=" + readyEvent
+                    + " track2Playing=" + playingEvent + " status=" + latestStatus);
+            finishSmoke(false);
+        });
+        smokeNextTrackPoller.play();
+    }
+
+    private void pollSmokeNextTrack() {
+        boolean readyEvent = hasSecondTrackReadyEvent();
+        boolean playingEvent = hasSecondTrackPlayingStatus();
+        if (readyEvent && playingEvent) {
+            System.out.println("SMOKE nextTrackEvent=true track2Event=" + readyEvent
+                    + " track2Playing=" + playingEvent + " status=" + latestStatus);
+            finishSmoke(smokePauseSeen && smokeSeeked);
+        }
+    }
+
+    private boolean hasSecondTrackReadyEvent() {
+        int openingAt = findEventAfter(smokeNextStartEventIndex, "Opening item 2/2");
+        if (openingAt < 0) return false;
+        String expected = backend.getValue().startsWith("LibVLC")
+                ? "READY — LibVLC item 2/2"
+                : "READY — JavaFX Media item 2/2";
+        return smokeEvents.subList(openingAt + 1, smokeEvents.size()).stream().anyMatch(s -> s.equals(expected));
+    }
+
+    private boolean hasSecondTrackPlayingStatus() {
+        int openingAt = findEventAfter(smokeNextStartEventIndex, "Opening item 2/2");
+        if (openingAt < 0) return false;
+        String expected = backend.getValue().startsWith("LibVLC")
+                ? "PLAYING — LibVLC item 2/2"
+                : "JavaFX Media item 2/2: PLAYING";
+        return smokeEvents.subList(openingAt + 1, smokeEvents.size()).stream().anyMatch(s -> s.equals(expected));
+    }
+
+    private int findEventAfter(int startIndex, String text) {
+        for (int i = Math.max(0, startIndex); i < smokeEvents.size(); i++) {
+            if (smokeEvents.get(i).contains(text)) return i;
+        }
+        return -1;
     }
 
     private void finishSmoke(boolean passed) {
         System.out.println(passed ? "SMOKE RESULT: PASS" : "SMOKE RESULT: FAIL");
+        System.out.println("SMOKE OUTPUT: playback state/events only; audible output is not verified by this test.");
         closeEngine();
         Platform.exit();
         System.exit(passed ? 0 : 1);
@@ -188,8 +283,15 @@ public final class PlaybackPocApp extends Application {
     }
 
     private void closeEngine() {
+        stopSmokeTimers();
         if (engine != null) {
-            try { engine.close(); } catch (RuntimeException | LinkageError ex) { status.setText("Engine shutdown warning: " + safeMessage(ex)); }
+            try {
+                engine.close();
+            } catch (RuntimeException | LinkageError ex) {
+                String message = "Engine shutdown warning: " + safeMessage(ex);
+                System.err.println("[poc] " + message);
+                status.setText(message);
+            }
             engine = null;
         }
         canSeek = false;
@@ -197,6 +299,13 @@ public final class PlaybackPocApp extends Application {
         seek.setDisable(true);
         seek.setValue(0);
         time.setText("00:00 / --:--");
+    }
+
+    private void stopSmokeTimers() {
+        if (smokeSeekPoller != null) smokeSeekPoller.stop();
+        if (smokeNextTrackPoller != null) smokeNextTrackPoller.stop();
+        if (smokeSeekResume != null) smokeSeekResume.stop();
+        if (smokeAdvanceToNext != null) smokeAdvanceToNext.stop();
     }
 
     private static String format(long millis) {
