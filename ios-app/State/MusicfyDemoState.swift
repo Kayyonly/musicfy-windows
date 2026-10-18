@@ -21,6 +21,31 @@ enum PlayerDestination: String, Identifiable {
 
 @MainActor
 final class MusicfyDemoState: ObservableObject {
+    init() {
+#if DEBUG
+        // Launch-argument routing is used only by the simulator screenshot workflow.
+        // Normal app launches and Release builds keep the regular Home entry point.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let markerIndex = arguments.firstIndex(of: "-musicfy-screenshot"),
+           markerIndex + 1 < arguments.count {
+            switch arguments[markerIndex + 1] {
+            case "home":
+                tab = .home
+            case "search":
+                tab = .search
+            case "library":
+                tab = .library
+            case "profile":
+                tab = .profile
+            case "now-playing", "queue", "lyrics":
+                showsPlayer = true
+            default:
+                break
+            }
+        }
+#endif
+    }
+
     @Published var tab: MusicfyTab = .home
     @Published var selectedID: String? = DemoCatalog.tracks.first?.id
     @Published var isDemoPlaying = false
