@@ -1,0 +1,11 @@
+# Parent repository ignores Python files; keep the supplied and CI audit helpers.
+!Scripts/*.py
+!CI/*.py
+
+# Local Xcode state and diagnostics are not source deliverables.
+DerivedData/
+CI-output/
+xcuserdata/
+*.xcuserstate
+__pycache__/
+*.pyc

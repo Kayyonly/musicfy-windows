@@ -1,0 +1,79 @@
+{
+  "kind": "static structural checks only",
+  "swift_compilation": "NOT RUN: swift/swiftc/Xcode unavailable",
+  "simulator_and_voiceover": "NOT RUN",
+  "checks": [
+    {
+      "check": "existing_files_preserved",
+      "passed": true,
+      "detail": {
+        "baseline_count": 2605,
+        "changed_or_missing": [],
+        "new_outside_ios_app": []
+      }
+    },
+    {
+      "check": "baseline_branch",
+      "passed": true,
+      "detail": "No branch switch expected"
+    },
+    {
+      "check": "baseline_head",
+      "passed": true,
+      "detail": "No commit expected"
+    },
+    {
+      "check": "seven_screens",
+      "passed": true,
+      "detail": [
+        "HomeView",
+        "SearchView",
+        "LibraryView",
+        "ProfileView",
+        "NowPlayingView",
+        "QueueView",
+        "LyricsView"
+      ]
+    },
+    {
+      "check": "apple_frameworks_only",
+      "passed": true,
+      "detail": [
+        "Combine",
+        "Foundation",
+        "SwiftUI"
+      ]
+    },
+    {
+      "check": "no_network_or_audio_api_in_production",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "one_app_entry",
+      "passed": true,
+      "detail": "Exactly one @main app"
+    },
+    {
+      "check": "no_package_dependencies",
+      "passed": true,
+      "detail": "No external dependency manifests"
+    },
+    {
+      "check": "text_files_complete",
+      "passed": true,
+      "detail": "28 nonempty Swift files with trailing newline"
+    },
+    {
+      "check": "delimiter_screening",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "check": "tests_provided",
+      "passed": true,
+      "detail": "XCTest source provided but NOT executed on Linux"
+    }
+  ],
+  "all_passed": true
+}
