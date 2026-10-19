@@ -52,7 +52,7 @@ struct HomeView: View {
                 }
                 .padding(.horizontal, inset)
                 .padding(.top, 8)
-                .padding(.bottom, MusicfySpacing.home)
+                .padding(.bottom, MusicfySpacing.home + MusicfySpacing.miniPlayerHeight + MusicfySpacing.navigationHeight + 32)
             }
         }
         .scrollContentBackground(.hidden)
