@@ -105,15 +105,20 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee CI-output/tests.log
 
-      - name: Keep only short-lived build and test diagnostics
+      - name: Capture seven UI screenshots from the selected iPhone simulator
+        if: success()
+        run: bash CI/capture_screenshots.sh
+
+      - name: Keep short-lived build, test, and screenshot artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ios-ui-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ios-ui-review-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ios-app/CI-output/*.log
             ios-app/CI-output/*.json
             ios-app/CI-output/*.xcresult
+            ios-app/CI-output/screenshots/**
           if-no-files-found: ignore
           retention-days: 3
           include-hidden-files: false

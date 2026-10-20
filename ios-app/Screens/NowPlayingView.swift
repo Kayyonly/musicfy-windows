@@ -4,9 +4,28 @@ struct NowPlayingView: View {
     @EnvironmentObject private var state: MusicfyDemoState
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var path: [PlayerDestination]
+
+    init() {
+        var initialPath: [PlayerDestination] = []
+#if DEBUG
+        // Queue/Lyrics are reached normally from the player. This path is seeded only
+        // when CI explicitly requests a screenshot of one of those destinations.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let markerIndex = arguments.firstIndex(of: "-musicfy-screenshot"),
+           markerIndex + 1 < arguments.count {
+            switch arguments[markerIndex + 1] {
+            case "queue": initialPath = [.queue]
+            case "lyrics": initialPath = [.lyrics]
+            default: break
+            }
+        }
+#endif
+        _path = State(initialValue: initialPath)
+    }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 playerBackdrop
 

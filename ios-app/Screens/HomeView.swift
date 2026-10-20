@@ -9,7 +9,8 @@ struct HomeView: View {
     private var demoAlbums: [MockAlbum] { Array(DemoCatalog.albums.prefix(4)) }
 
     var body: some View {
-        GeometryReader { proxy in
+        ScrollViewReader { scrollProxy in
+            GeometryReader { proxy in
             let inset = proxy.size.width < 390 ? MusicfySpacing.page : MusicfySpacing.home
             ScrollView {
                 VStack(alignment: .leading, spacing: MusicfySpacing.section) {
@@ -49,14 +50,27 @@ struct HomeView: View {
                             }
                         }
                     }
+                    Color.clear
+                        .frame(height: 1)
+                        .id("home-scroll-bottom")
                 }
                 .padding(.horizontal, inset)
                 .padding(.top, 8)
-                .padding(.bottom, MusicfySpacing.home)
+                .padding(.bottom, MusicfySpacing.home + MusicfySpacing.miniPlayerHeight + MusicfySpacing.navigationHeight + 32)
+            }
+            .onAppear {
+#if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("home-bottom") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        scrollProxy.scrollTo("home-scroll-bottom", anchor: .bottom)
+                    }
+                }
+#endif
             }
         }
         .scrollContentBackground(.hidden)
         .background(MusicfyTheme.background.ignoresSafeArea())
+        }
     }
 
     private var hero: some View {
