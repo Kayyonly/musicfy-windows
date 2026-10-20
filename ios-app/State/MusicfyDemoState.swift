@@ -29,7 +29,7 @@ final class MusicfyDemoState: ObservableObject {
         if let markerIndex = arguments.firstIndex(of: "-musicfy-screenshot"),
            markerIndex + 1 < arguments.count {
             switch arguments[markerIndex + 1] {
-            case "home":
+            case "home", "home-bottom":
                 tab = .home
             case "search":
                 tab = .search

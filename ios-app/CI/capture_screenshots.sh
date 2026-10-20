@@ -31,7 +31,7 @@ xcrun simctl status_bar "$device_id" override \
   --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 \
   >/dev/null 2>&1 || true
 
-for screen in home search library profile now-playing queue lyrics; do
+for screen in home search library profile now-playing queue lyrics home-bottom; do
   echo "Capturing Musicfy iPhone screen: $screen"
   xcrun simctl terminate "$device_id" "$bundle_id" >/dev/null 2>&1 || true
   xcrun simctl launch --terminate-running-process "$device_id" "$bundle_id" \
@@ -69,6 +69,7 @@ cat > "$out_dir/index.html" <<'HTML'
     <figure><a href="now-playing.png"><img src="now-playing.png" alt="Now Playing screen"></a><figcaption>Now Playing</figcaption></figure>
     <figure><a href="queue.png"><img src="queue.png" alt="Queue screen"></a><figcaption>Queue</figcaption></figure>
     <figure><a href="lyrics.png"><img src="lyrics.png" alt="Lyrics screen"></a><figcaption>Lyrics</figcaption></figure>
+    <figure><a href="home-bottom.png"><img src="home-bottom.png" alt="Home screen scrolled to bottom"></a><figcaption>Home — bottom</figcaption></figure>
   </main>
 </body>
 </html>
