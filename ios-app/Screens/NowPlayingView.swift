@@ -44,6 +44,10 @@ struct NowPlayingView: View {
                 .scrollIndicators(.hidden)
             }
             .background(MusicfyTheme.background.ignoresSafeArea())
+            #if DEBUG
+            .accessibilityIdentifier("destination.now-playing")
+            .onAppear { state.reportScreenshotReady("now-playing") }
+            #endif
             .navigationTitle("Now Playing")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -169,15 +173,19 @@ struct NowPlayingView: View {
                         .font(MusicfyTypography.subtitle.weight(.semibold))
                         .foregroundStyle(state.isShuffle ? MusicfyTheme.primary : MusicfyTheme.secondary)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(MusicfyTheme.field, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .modifier(MusicfyGlass(radius: 14))
                 }
+                .accessibilityAddTraits(state.isShuffle ? .isSelected : [])
+                .accessibilityValue(state.isShuffle ? "On" : "Off")
                 Button { state.isRepeat.toggle() } label: {
                     Label("Repeat", systemImage: "repeat")
                         .font(MusicfyTypography.subtitle.weight(.semibold))
                         .foregroundStyle(state.isRepeat ? MusicfyTheme.primary : MusicfyTheme.secondary)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(MusicfyTheme.field, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .modifier(MusicfyGlass(radius: 14))
                 }
+                .accessibilityAddTraits(state.isRepeat ? .isSelected : [])
+                .accessibilityValue(state.isRepeat ? "On" : "Off")
             }
 
             HStack(spacing: 12) {
@@ -200,7 +208,7 @@ struct NowPlayingView: View {
                 .font(MusicfyTypography.subtitle.weight(.semibold))
                 .foregroundStyle(MusicfyTheme.primary)
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .background(MusicfyTheme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .modifier(MusicfyGlass(radius: 14))
         }
     }
 

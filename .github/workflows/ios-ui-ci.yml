@@ -105,9 +105,31 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee CI-output/tests.log
 
-      - name: Capture seven UI screenshots from the selected iPhone simulator
+      - name: Build unsigned Release app for the selected iPhone simulator
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project MusicfyIOS.xcodeproj -scheme MusicfyIOS -configuration Release \
+            -destination "$MUSICFY_DESTINATION" -destination-timeout 120 \
+            -derivedDataPath "$RUNNER_TEMP/MusicfyIOS-Release-DerivedData" \
+            -resultBundlePath CI-output/Release-Build.xcresult \
+            -disableAutomaticPackageResolution -skipPackageUpdates \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee CI-output/release-build.log
+
+      - name: Capture eight UI routes from the selected iPhone simulator
         if: success()
         run: bash CI/capture_screenshots.sh
+
+      - name: Record capture limitation
+        if: ${{ always() }}
+        run: |
+          mkdir -p CI-output
+          {
+            echo 'For successfully captured routes, readiness JSON records the mounted destination and home-bottom marker visibility.'
+            echo 'Missing screenshots or readiness JSON indicate incomplete capture; consult build, test, and capture diagnostics.'
+            echo 'Manual visual and accessibility inspection is still required; inspect screenshots/index.html and readiness JSON evidence.'
+          } > CI-output/visual-verification.txt
 
       - name: Keep short-lived build, test, and screenshot artifacts
         if: ${{ always() }}
@@ -119,6 +141,7 @@ jobs:
             ios-app/CI-output/*.json
             ios-app/CI-output/*.xcresult
             ios-app/CI-output/screenshots/**
+            ios-app/CI-output/visual-verification.txt
           if-no-files-found: ignore
           retention-days: 3
           include-hidden-files: false

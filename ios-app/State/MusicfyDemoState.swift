@@ -4,6 +4,17 @@ import Combine
 enum MusicfyTab: String, CaseIterable, Identifiable {
     case home = "Home", search = "Search", library = "Library", profile = "Profile"
     var id: String { rawValue }
+    var position: Double { Double(Self.allCases.firstIndex(of: self) ?? 0) }
+
+    static func clampedPosition(_ position: Double) -> Double {
+        guard position.isFinite else { return 0 }
+        return min(Double(allCases.count - 1), max(0, position))
+    }
+
+    static func nearest(to position: Double) -> Self {
+        allCases[Int(clampedPosition(position).rounded())]
+    }
+
     var symbol: String {
         switch self {
         case .home: return "house"
@@ -93,5 +104,27 @@ final class MusicfyDemoState: ObservableObject {
         searchHistory.removeAll { $0.caseInsensitiveCompare(term) == .orderedSame }
         searchHistory.insert(term, at: 0)
         searchHistory = Array(searchHistory.prefix(5))
+    }
+
+    /// Only the simulator harness requests this route. A screenshot is not ready
+    /// until its actual destination appears (and Home's end marker is visible).
+    /// Release builds and ordinary Debug launches never write capture metadata.
+    func reportScreenshotReady(_ route: String, bottomVisible: Bool? = nil) {
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-musicfy-screenshot"),
+              index + 1 < arguments.count, arguments[index + 1] == route,
+              route != "home-bottom" || bottomVisible == true,
+              let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        var evidence: [String: Any] = ["route": route, "ready": true]
+        if let bottomVisible { evidence["bottomVisible"] = bottomVisible }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
+            try data.write(to: directory.appendingPathComponent("musicfy-screenshot-ready.json"), options: .atomic)
+        } catch {
+            print("Screenshot readiness could not be written: \(error)")
+        }
+#endif
     }
 }

@@ -1,7 +1,25 @@
 import SwiftUI
 
+#if DEBUG
+private struct HomeGeometryPreferenceKey: PreferenceKey {
+    struct Value: Equatable {
+        var viewport: CGRect? = nil
+        var marker: CGRect? = nil
+    }
+
+    static var defaultValue = Value()
+
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        let next = nextValue()
+        value.viewport = next.viewport ?? value.viewport
+        value.marker = next.marker ?? value.marker
+    }
+}
+#endif
+
 struct HomeView: View {
     @EnvironmentObject private var state: MusicfyDemoState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var heroTrack: MockTrack { state.selectedTrack ?? state.tracks[0] }
     private var recentTracks: [MockTrack] { Array(state.tracks.prefix(5)) }
@@ -10,8 +28,6 @@ struct HomeView: View {
 
     var body: some View {
         ScrollViewReader { scrollProxy in
-            GeometryReader { proxy in
-            let inset = proxy.size.width < 390 ? MusicfySpacing.page : MusicfySpacing.home
             ScrollView {
                 VStack(alignment: .leading, spacing: MusicfySpacing.section) {
                     PageHeader(title: "Home")
@@ -53,13 +69,23 @@ struct HomeView: View {
                     Color.clear
                         .frame(height: 1)
                         .id("home-scroll-bottom")
+                        #if DEBUG
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: HomeGeometryPreferenceKey.self, value: .init(marker: proxy.frame(in: .global)))
+                            }
+                        }
+                        #endif
                 }
-                .padding(.horizontal, inset)
+                .padding(.horizontal, MusicfySpacing.page)
                 .padding(.top, 8)
-                .padding(.bottom, MusicfySpacing.home + MusicfySpacing.miniPlayerHeight + MusicfySpacing.navigationHeight + 32)
+                // AppRootView owns the bottom safe-area inset; this is only breathing room
+                // after the final section so screenshot scroll-to-bottom reaches real content.
+                .padding(.bottom, MusicfySpacing.page)
             }
             .onAppear {
 #if DEBUG
+                state.reportScreenshotReady("home")
                 if ProcessInfo.processInfo.arguments.contains("home-bottom") {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                         scrollProxy.scrollTo("home-scroll-bottom", anchor: .bottom)
@@ -67,10 +93,26 @@ struct HomeView: View {
                 }
 #endif
             }
+            #if DEBUG
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: HomeGeometryPreferenceKey.self, value: .init(viewport: proxy.frame(in: .global)))
+                }
+            }
+            .onPreferenceChange(HomeGeometryPreferenceKey.self) { frames in
+                guard ProcessInfo.processInfo.arguments.contains("home-bottom"),
+                      let viewport = frames.viewport, let marker = frames.marker else { return }
+                let tolerance: CGFloat = 1
+                let visible = marker.minY >= viewport.minY - tolerance && marker.maxY <= viewport.maxY + tolerance
+                state.reportScreenshotReady("home-bottom", bottomVisible: visible)
+            }
+            #endif
         }
         .scrollContentBackground(.hidden)
         .background(MusicfyTheme.background.ignoresSafeArea())
-        }
+        #if DEBUG
+        .accessibilityIdentifier("screen.home")
+        #endif
     }
 
     private var hero: some View {
@@ -88,22 +130,29 @@ struct HomeView: View {
                     .frame(width: 220, height: 220)
                     .offset(x: 150, y: 80)
                 LinearGradient(colors: [.black.opacity(0.02), .black.opacity(0.88)], startPoint: .top, endPoint: .bottom)
-                HStack(alignment: .bottom, spacing: 18) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 74, weight: .black))
-                        .foregroundStyle(.white.opacity(0.94))
-                        .accessibilityHidden(true)
+                AnyLayout(dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(alignment: .bottom, spacing: 18))) {
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 74, weight: .black))
+                            .foregroundStyle(.white.opacity(0.94))
+                            .accessibilityHidden(true)
+                    }
                     VStack(alignment: .leading, spacing: 5) {
                         Text("RANDOM PLAYS").font(.caption.weight(.bold)).tracking(1.4).foregroundStyle(.white.opacity(0.72))
-                        Text("Gacha here!").font(MusicfyTypography.pageTitle).foregroundStyle(.white).lineLimit(1)
-                        Text("\(heroTrack.title) · \(heroTrack.artist)").font(MusicfyTypography.subtitle).foregroundStyle(.white.opacity(0.78)).lineLimit(1)
+                        Text("Gacha here!")
+                            .font(MusicfyTypography.pageTitle)
+                            .foregroundStyle(.white)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                            .minimumScaleFactor(0.78)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("\(heroTrack.title) · \(heroTrack.artist)").font(MusicfyTypography.subtitle).foregroundStyle(.white.opacity(0.78)).lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         Text("LOCAL UI DEMO · NO AUDIO").font(.caption2.weight(.semibold)).tracking(0.8).foregroundStyle(.white.opacity(0.62))
                     }
                 }
                 .padding(20)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 320)
+            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 360 : 300, alignment: .bottomLeading)
             .clipShape(RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous))
             .clipped()
             .accessibilityElement(children: .combine)

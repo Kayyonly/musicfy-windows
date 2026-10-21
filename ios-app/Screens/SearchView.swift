@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SearchView: View {
     @EnvironmentObject private var state: MusicfyDemoState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var isSearchFocused: Bool
     @State private var category: SearchCategory = .all
     @State private var moodNotice: String?
@@ -40,10 +41,14 @@ struct SearchView: View {
             }
             .padding(.horizontal, MusicfySpacing.page)
             .padding(.top, 8)
-            .padding(.bottom, MusicfySpacing.home)
+            .padding(.bottom, MusicfySpacing.page)
         }
         .scrollContentBackground(.hidden)
         .background(MusicfyTheme.background.ignoresSafeArea())
+        .scrollDismissesKeyboard(.interactively)
+        #if DEBUG
+        .onAppear { state.reportScreenshotReady("search") }
+        #endif
         .onChange(of: isSearchFocused) { _, focused in if !focused { state.rememberSearch() } }
         .onChange(of: state.tab) { _, tab in if tab != .search { isSearchFocused = false } }
         .alert("Mood browsing is visual only", isPresented: Binding(get: { moodNotice != nil }, set: { if !$0 { moodNotice = nil } })) {
@@ -67,7 +72,7 @@ struct SearchView: View {
     private var browse: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionHeader(title: "Moods & moments", subtitle: "Local UI demo")
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: MusicfySpacing.cardGap), GridItem(.flexible(), spacing: MusicfySpacing.cardGap)], spacing: MusicfySpacing.cardGap) {
+            LazyVGrid(columns: dynamicTypeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.flexible(), spacing: MusicfySpacing.cardGap), GridItem(.flexible(), spacing: MusicfySpacing.cardGap)], spacing: MusicfySpacing.cardGap) {
                 ForEach(Array(moods.enumerated()), id: \.element) { index, mood in
                     MoodCard(title: mood, artwork: index) { moodNotice = "\(mood) — mood browsing is visual only. Search the local catalog by song title, artist, or album." }
                 }
@@ -87,6 +92,7 @@ struct SearchView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(category == item ? .isSelected : [])
+                        .accessibilityValue(category == item ? "Selected" : "Not selected")
                         .accessibilityLabel("Filter by \(item.rawValue)")
                     }
                 }
@@ -97,7 +103,7 @@ struct SearchView: View {
                     state.select(top)
                     state.showsPlayer = true
                 } label: {
-                    HStack(spacing: 16) {
+                    AnyLayout(dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 16))) {
                         AlbumArtworkView(artwork: top.artwork).frame(width: 144, height: 144)
                         VStack(alignment: .leading, spacing: 7) {
                             Text("TOP RESULT").font(.caption.weight(.bold)).tracking(1.1).foregroundStyle(MusicfyTheme.secondary)
@@ -118,6 +124,9 @@ struct SearchView: View {
             if matches.isEmpty {
                 ContentUnavailableView("No local matches", systemImage: "magnifyingglass", description: Text("Try a title, artist, or album from this demo catalog."))
                     .foregroundStyle(MusicfyTheme.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, MusicfySpacing.page)
+                    .accessibilityElement(children: .combine)
             } else {
                 LazyVStack(spacing: 4) {
                     ForEach(matches) { track in

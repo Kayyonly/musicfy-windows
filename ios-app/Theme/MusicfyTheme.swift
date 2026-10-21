@@ -9,6 +9,8 @@ enum MusicfyTheme {
     static let divider = Color(hex: 0x232326)
     static let chrome = Color(hex: 0x0F0F12)
     static let selected = Color.white.opacity(0.2)
+    static let opaqueSelection = Color(hex: 0x45454A)
+    static let navigationSecondary = Color(hex: 0xC3C3C8)
 
     // Original tonal placeholders, not colors extracted from commercial covers.
     static func artworkColors(_ index: Int) -> [Color] {

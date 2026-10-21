@@ -17,12 +17,14 @@ struct AppRootView: View {
         }
         .foregroundStyle(MusicfyTheme.primary)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 8) {
-                MiniPlayerView()
-                MusicfyBottomNavigation()
+            MusicfyGlassGroup {
+                VStack(spacing: MusicfySpacing.chromeGap) {
+                    MiniPlayerView()
+                    MusicfyBottomNavigation()
+                }
             }
             .padding(.horizontal, MusicfySpacing.page)
-            .padding(.top, 8).padding(.bottom, 8)
+            .padding(.vertical, MusicfySpacing.chromePadding)
             .background {
                 LinearGradient(colors: [.clear, .black.opacity(0.9)], startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea(edges: .bottom)
@@ -31,6 +33,7 @@ struct AppRootView: View {
         .sheet(isPresented: $state.showsPlayer) {
             NowPlayingView().environmentObject(state)
                 .preferredColorScheme(.dark)
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
     }

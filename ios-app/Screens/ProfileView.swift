@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ProfileView: View {
+    @EnvironmentObject private var state: MusicfyDemoState
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsAlert = false
     @State private var alertTitle = ""
@@ -18,10 +19,13 @@ struct ProfileView: View {
             }
             .padding(.horizontal, MusicfySpacing.page)
             .padding(.top, 8)
-            .padding(.bottom, MusicfySpacing.home)
+            .padding(.bottom, MusicfySpacing.page)
         }
         .scrollContentBackground(.hidden)
         .background(MusicfyTheme.background.ignoresSafeArea())
+        #if DEBUG
+        .onAppear { state.reportScreenshotReady("profile") }
+        #endif
         .alert(alertTitle, isPresented: $showsAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -48,7 +52,7 @@ struct ProfileView: View {
 
     private var identityCard: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top, spacing: 16) {
+            AnyLayout(dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
                 Circle()
                     .fill(MusicfyTheme.field)
                     .overlay {
@@ -70,24 +74,37 @@ struct ProfileView: View {
                 }
             }
 
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("DEMO ID")
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 12) {
+                    demoID
+                    Text("DEMO PROFILE")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(MusicfyTheme.secondary)
-                    Text("DEMO-0001")
-                        .font(.system(.body, design: .monospaced, weight: .medium))
-                        .foregroundStyle(MusicfyTheme.primary)
                 }
-                Spacer()
-                Text("DEMO PROFILE")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(MusicfyTheme.secondary)
+            } else {
+                HStack {
+                    demoID
+                    Spacer()
+                    Text("DEMO PROFILE")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MusicfyTheme.secondary)
+                }
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(MusicfyTheme.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    private var demoID: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("DEMO ID")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(MusicfyTheme.secondary)
+            Text("DEMO-0001")
+                .font(.system(.body, design: .monospaced, weight: .medium))
+                .foregroundStyle(MusicfyTheme.primary)
+        }
     }
 
     private var listeningTimeCard: some View {
@@ -102,18 +119,15 @@ struct ProfileView: View {
                     .accessibilityHidden(true)
             }
 
-            Group {
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(alignment: .leading, spacing: 16) {
-                        listeningMetric
-                        statsButton
-                    }
-                } else {
-                    HStack(alignment: .bottom, spacing: 16) {
-                        listeningMetric
-                        Spacer()
-                        statsButton
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .bottom, spacing: 16) {
+                    listeningMetric
+                    Spacer(minLength: 8)
+                    statsButton
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    listeningMetric
+                    statsButton
                 }
             }
         }
@@ -195,7 +209,7 @@ struct ProfileView: View {
             .foregroundStyle(MusicfyTheme.primary)
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-            .background(MusicfyTheme.field, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .modifier(MusicfyGlass(radius: 18))
         }
         .buttonStyle(.plain)
     }

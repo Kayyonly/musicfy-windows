@@ -15,6 +15,10 @@ struct QueueView: View {
         }
         .scrollIndicators(.hidden)
         .background(MusicfyTheme.background.ignoresSafeArea())
+        #if DEBUG
+        .accessibilityIdentifier("destination.queue")
+        .onAppear { state.reportScreenshotReady("queue") }
+        #endif
         .navigationTitle("Queue")
         .navigationBarTitleDisplayMode(.large)
     }
@@ -67,6 +71,7 @@ struct QueueView: View {
         .background(selected ? MusicfyTheme.field : Color.clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
+        .accessibilityValue(selected ? "Selected" : "")
     }
 
     private var emptyState: some View {

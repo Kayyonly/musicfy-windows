@@ -1,5 +1,6 @@
 """Offline fixtures only: these tests never call Xcode or a simulator."""
 import copy
+from pathlib import Path
 import unittest
 
 from select_destination import select_destination
@@ -89,6 +90,49 @@ class DestinationTests(unittest.TestCase):
         self.devices = {'devices': {}}
         with self.assertRaisesRegex(ValueError, 'no download or fallback'):
             self.choose()
+
+
+class CaptureContractTests(unittest.TestCase):
+    ROOT = Path(__file__).resolve().parents[1]
+    CAPTURE = (ROOT / 'CI' / 'capture_screenshots.sh').read_text()
+    WORKFLOW = (ROOT.parent / '.github' / 'workflows' / 'ios-ui-ci.yml').read_text()
+    ROUTES = ('home', 'search', 'library', 'profile', 'now-playing', 'queue', 'lyrics', 'home-bottom')
+
+    def test_capture_manifest_has_exactly_eight_requested_routes(self):
+        self.assertIn('routes=(home search library profile now-playing queue lyrics home-bottom)', self.CAPTURE)
+        self.assertEqual(self.CAPTURE.count('for screen in "${routes[@]}"'), 1)
+
+    def test_gallery_links_every_route_and_diagnostics(self):
+        for route in self.ROUTES:
+            self.assertIn(f'href="{route}.png"', self.CAPTURE)
+        self.assertIn('href="diagnostics.txt"', self.CAPTURE)
+        self.assertIn('visual-verification.txt', self.WORKFLOW)
+
+    def test_readiness_is_polled_and_saved_before_screenshot(self):
+        self.assertIn('simctl get_app_container "$device_id" "$bundle_id" data', self.CAPTURE)
+        self.assertIn('rm -f "$readiness_file"', self.CAPTURE)
+        self.assertIn('readiness_deadline=$((SECONDS + 20))', self.CAPTURE)
+        self.assertIn('cp "$readiness_file" "$out_dir/$screen-readiness.json"', self.CAPTURE)
+        self.assertLess(self.CAPTURE.index('cp "$readiness_file"'), self.CAPTURE.index('sleep "$settle_seconds"'))
+
+    def test_readiness_validation_requires_exact_route_and_home_bottom_marker(self):
+        self.assertIn('expected = {"route": route, "ready": True}', self.CAPTURE)
+        self.assertIn('expected["bottomVisible"] = True', self.CAPTURE)
+        self.assertIn('payload == expected', self.CAPTURE)
+        self.assertIn('Readiness timeout or invalid JSON for route', self.CAPTURE)
+
+    def test_workflow_is_manual_unsigned_read_only_and_pinned(self):
+        self.assertIn('workflow_dispatch:', self.WORKFLOW)
+        self.assertNotIn('push:', self.WORKFLOW)
+        self.assertIn('contents: read', self.WORKFLOW)
+        self.assertIn('runs-on: macos-15', self.WORKFLOW)
+        self.assertIn('/Applications/Xcode_16.4.app/Contents/Developer', self.WORKFLOW)
+        self.assertNotIn('Xcode_26', self.WORKFLOW)
+        self.assertIn('CODE_SIGNING_ALLOWED=NO', self.WORKFLOW)
+        self.assertIn('CODE_SIGNING_REQUIRED=NO', self.WORKFLOW)
+        self.assertIn('Build unsigned Release app for the selected iPhone simulator', self.WORKFLOW)
+        self.assertIn('-configuration Release', self.WORKFLOW)
+        self.assertIn('retention-days: 3', self.WORKFLOW)
 
 
 if __name__ == '__main__':

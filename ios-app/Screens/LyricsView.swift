@@ -23,6 +23,10 @@ struct LyricsView: View {
             .scrollIndicators(.hidden)
         }
         .background(MusicfyTheme.background.ignoresSafeArea())
+        #if DEBUG
+        .accessibilityIdentifier("destination.lyrics")
+        .onAppear { state.reportScreenshotReady("lyrics") }
+        #endif
         .navigationTitle("Lyrics")
         .navigationBarTitleDisplayMode(.large)
     }
@@ -73,7 +77,7 @@ struct LyricsView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(index == activeLine ? MusicfyTheme.primary : Color.clear)
-                            .frame(width: 4)
+                            .frame(width: 4, height: 24, alignment: .top)
                         Text(line)
                             .font(.system(.title, design: .default, weight: .bold))
                             .foregroundStyle(MusicfyTheme.primary)
@@ -88,6 +92,7 @@ struct LyricsView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Lyric line \(index + 1): \(line)")
                 .accessibilityAddTraits(index == activeLine ? .isSelected : [])
+                .accessibilityValue(index == activeLine ? "Selected" : "Not selected")
             }
         }
         .padding(.horizontal, MusicfySpacing.cardGap)

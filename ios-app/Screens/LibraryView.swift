@@ -23,10 +23,14 @@ struct LibraryView: View {
             }
             .padding(.horizontal, MusicfySpacing.page)
             .padding(.top, 8)
-            .padding(.bottom, MusicfySpacing.home)
+            .padding(.bottom, MusicfySpacing.page)
         }
         .scrollContentBackground(.hidden)
         .background(MusicfyTheme.background.ignoresSafeArea())
+        .scrollDismissesKeyboard(.interactively)
+        #if DEBUG
+        .onAppear { state.reportScreenshotReady("library") }
+        #endif
         .onChange(of: state.tab) { _, newTab in
             if newTab != .library {
                 searchIsFocused = false
@@ -122,6 +126,7 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 32 : 48)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Your local library is empty" : "No local results for \(query)")
     }
 
     private func present(title: String, message: String) {

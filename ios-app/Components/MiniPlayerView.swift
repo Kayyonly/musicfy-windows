@@ -10,15 +10,18 @@ struct MiniPlayerView: View {
                     HStack(spacing: 10) {
                         AlbumArtworkView(artwork: track.artwork).frame(width: 48, height: 48)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(track.title).font(MusicfyTypography.cardTitle).lineLimit(1)
+                            Text(track.title).font(MusicfyTypography.cardTitle)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                             Text(track.artist).font(MusicfyTypography.subtitle)
-                                .foregroundStyle(MusicfyTheme.secondary).lineLimit(1)
+                                .foregroundStyle(MusicfyTheme.secondary)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Open Now Playing: \(track.title), \(track.artist)")
+                .accessibilityIdentifier("player.open")
                 Button { state.toggleDemoPlayback() } label: {
                     Image(systemName: state.isDemoPlaying ? "pause.fill" : "play.fill")
                         .font(.title3).frame(width: 44, height: 48)
@@ -31,7 +34,7 @@ struct MiniPlayerView: View {
                 }
             }
             .buttonStyle(.plain)
-            .padding(8)
+            .padding(MusicfySpacing.chromePadding)
             .frame(minHeight: MusicfySpacing.miniPlayerHeight)
             .modifier(MusicfyGlass(radius: 28))
         }
