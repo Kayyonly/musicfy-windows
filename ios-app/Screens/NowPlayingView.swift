@@ -92,7 +92,21 @@ struct NowPlayingView: View {
 
     private var artwork: some View {
         Group {
-            if let track = state.selectedTrack {
+            if let liveTrack = state.selectedLiveTrack {
+                AsyncImage(url: liveTrack.thumbnailURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    AlbumArtworkView(artwork: 0)
+                }
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous)
+                        .stroke(MusicfyTheme.primary.opacity(0.12), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.22), radius: 24, y: 12)
+                .accessibilityLabel("Artwork for \(liveTrack.title)")
+            } else if let track = state.selectedTrack {
                 AlbumArtworkView(artwork: track.artwork)
                     .aspectRatio(1, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous))
@@ -113,14 +127,20 @@ struct NowPlayingView: View {
     private var trackInformation: some View {
         HStack(alignment: .center, spacing: MusicfySpacing.cardGap) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(state.selectedTrack?.title ?? "Nothing selected")
+                Text(state.selectedLiveTrack?.title ?? state.selectedTrack?.title ?? "Nothing selected")
                     .font(MusicfyTypography.pageTitle)
                     .foregroundStyle(MusicfyTheme.primary)
                     .lineLimit(2)
-                Text(state.selectedTrack.map { "\($0.artist) · \($0.albumTitle)" } ?? "Choose a track to begin")
-                    .font(MusicfyTypography.subtitle)
-                    .foregroundStyle(MusicfyTheme.secondary)
-                    .lineLimit(2)
+                Text(
+                    state.selectedLiveTrack.map { liveTrack in
+                        liveTrack.albumTitle.map { "\(liveTrack.artist) · \($0)" } ?? liveTrack.artist
+                    }
+                    ?? state.selectedTrack.map { "\($0.artist) · \($0.albumTitle)" }
+                    ?? "Choose a track to begin"
+                )
+                .font(MusicfyTypography.subtitle)
+                .foregroundStyle(MusicfyTheme.secondary)
+                .lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -131,7 +151,7 @@ struct NowPlayingView: View {
                     .frame(width: 44, height: 44)
                     .background(MusicfyTheme.field, in: Circle())
             }
-            .disabled(state.selectedTrack == nil)
+            .disabled(state.selectedID == nil)
             .accessibilityLabel(state.isFavorite ? "Remove from favorites" : "Add to favorites")
         }
     }
@@ -140,13 +160,13 @@ struct NowPlayingView: View {
         VStack(spacing: 8) {
             Slider(value: progressBinding, in: 0...1)
                 .tint(MusicfyTheme.primary)
-                .disabled(state.selectedTrack == nil)
-                .accessibilityLabel("Silent demo progress")
+                .disabled(state.selectedTrack == nil || state.selectedLiveTrack != nil)
+                .accessibilityLabel("Playback progress preview")
 
             HStack {
                 Text(timestamp(for: state.progress))
                 Spacer()
-                Text(state.selectedTrack?.durationLabel ?? "0:00")
+                Text(state.selectedLiveTrack?.durationText ?? state.selectedTrack?.durationLabel ?? "0:00")
             }
             .font(MusicfyTypography.subtitle)
             .foregroundStyle(MusicfyTheme.secondary)
@@ -157,10 +177,13 @@ struct NowPlayingView: View {
     private var transportControls: some View {
         HStack(spacing: 18) {
             controlButton(symbol: "backward.fill", label: "Previous track", size: 46) { state.step(-1) }
-            controlButton(symbol: state.isDemoPlaying ? "pause.fill" : "play.fill", label: state.isDemoPlaying ? "Pause silent demo" : "Play silent demo", size: 68) {
+                .disabled(state.selectedLiveTrack != nil)
+            controlButton(symbol: state.isDemoPlaying ? "pause.fill" : "play.fill", label: state.selectedLiveTrack != nil ? "Playback not connected" : (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo"), size: 68) {
                 state.toggleDemoPlayback()
             }
+            .disabled(state.selectedLiveTrack != nil)
             controlButton(symbol: "forward.fill", label: "Next track", size: 46) { state.step(1) }
+                .disabled(state.selectedLiveTrack != nil)
         }
         .frame(maxWidth: .infinity)
     }
@@ -193,7 +216,7 @@ struct NowPlayingView: View {
                 navigationLink(.lyrics, title: "Lyrics", symbol: "quote.bubble")
             }
 
-            Text("UI demo · no audio")
+            Text(state.selectedLiveTrack == nil ? "UI demo · no audio" : "Metadata selected · playback not connected")
                 .font(MusicfyTypography.subtitle)
                 .foregroundStyle(MusicfyTheme.secondary)
                 .frame(maxWidth: .infinity)

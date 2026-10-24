@@ -59,6 +59,7 @@ final class MusicfyDemoState: ObservableObject {
 
     @Published var tab: MusicfyTab = .home
     @Published var selectedID: String? = DemoCatalog.tracks.first?.id
+    @Published var selectedLiveTrack: InnerTubeTrack?
     @Published var isDemoPlaying = false
     @Published var favoriteIDs: Set<String> = []
     @Published var showsPlayer = false
@@ -74,9 +75,18 @@ final class MusicfyDemoState: ObservableObject {
     var isFavorite: Bool { selectedID.map { favoriteIDs.contains($0) } ?? false }
 
     func select(_ track: MockTrack) {
+        selectedLiveTrack = nil
         selectedID = track.id
         progress = 0
         isDemoPlaying = false
+    }
+
+    func selectLiveTrack(_ track: InnerTubeTrack) {
+        selectedLiveTrack = track
+        selectedID = track.id
+        progress = 0
+        isDemoPlaying = false
+        showsPlayer = true
     }
     func toggleFavorite() {
         guard let id = selectedID else { return }

@@ -100,40 +100,48 @@ struct SearchView: View {
                 SectionHeader(title: "Songs", subtitle: "\(liveResults.count) metadata results")
                 LazyVStack(spacing: 4) {
                     ForEach(liveResults) { track in
-                        HStack(spacing: 12) {
-                            AsyncImage(url: track.thumbnailURL) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                AlbumArtworkView(artwork: 0)
-                            }
-                            .frame(width: 52, height: 52)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        Button {
+                            state.rememberSearch()
+                            state.selectLiveTrack(track)
+                        } label: {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: track.thumbnailURL) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    AlbumArtworkView(artwork: 0)
+                                }
+                                .frame(width: 52, height: 52)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(track.title)
-                                    .font(MusicfyTypography.cardTitle)
-                                    .foregroundStyle(MusicfyTheme.primary)
-                                    .lineLimit(2)
-                                Text(track.artist)
-                                    .font(MusicfyTypography.subtitle)
-                                    .foregroundStyle(MusicfyTheme.secondary)
-                                    .lineLimit(1)
-                                if let albumTitle = track.albumTitle, !albumTitle.isEmpty {
-                                    Text(albumTitle)
-                                        .font(.caption)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(track.title)
+                                        .font(MusicfyTypography.cardTitle)
+                                        .foregroundStyle(MusicfyTheme.primary)
+                                        .lineLimit(2)
+                                    Text(track.artist)
+                                        .font(MusicfyTypography.subtitle)
                                         .foregroundStyle(MusicfyTheme.secondary)
                                         .lineLimit(1)
+                                    if let albumTitle = track.albumTitle, !albumTitle.isEmpty {
+                                        Text(albumTitle)
+                                            .font(.caption)
+                                            .foregroundStyle(MusicfyTheme.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                if let durationText = track.durationText {
+                                    Text(durationText)
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(MusicfyTheme.secondary)
                                 }
                             }
+                            .padding(.vertical, 6)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            if let durationText = track.durationText {
-                                Text(durationText)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(MusicfyTheme.secondary)
-                            }
+                            .contentShape(Rectangle())
                         }
-                        .padding(.vertical, 6)
-                        .accessibilityElement(children: .combine)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open Now Playing: \(track.title), \(track.artist)")
                     }
                 }
                 Text("Metadata only in this step; audio playback is not connected yet.")

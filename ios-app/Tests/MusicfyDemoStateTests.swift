@@ -109,6 +109,30 @@ final class MusicfyDemoStateTests: XCTestCase {
         }
     }
 
+    func testSelectingLiveSearchResultOpensMetadataPlayer() {
+        let state = MusicfyDemoState()
+        let track = InnerTubeTrack(
+            id: "live-video-123",
+            title: "Ini Abadi",
+            artist: "Perunggu",
+            albumTitle: "Memorandum",
+            durationText: "3:52",
+            thumbnailURL: URL(string: "https://example.com/art.jpg")
+        )
+
+        state.selectLiveTrack(track)
+
+        XCTAssertEqual(state.selectedLiveTrack?.id, "live-video-123")
+        XCTAssertEqual(state.selectedID, "live-video-123")
+        XCTAssertTrue(state.showsPlayer)
+        XCTAssertFalse(state.isDemoPlaying)
+        XCTAssertNil(state.selectedTrack)
+
+        state.select(DemoCatalog.tracks[1])
+        XCTAssertNil(state.selectedLiveTrack)
+        XCTAssertEqual(state.selectedTrack?.id, DemoCatalog.tracks[1].id)
+    }
+
     func testInnerTubeSearchParserMapsSongMetadata() {
         let response: [String: Any] = [
             "contents": [

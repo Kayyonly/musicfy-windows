@@ -3,16 +3,41 @@ import SwiftUI
 struct MiniPlayerView: View {
     @EnvironmentObject private var state: MusicfyDemoState
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var displayedTitle: String? {
+        state.selectedLiveTrack?.title ?? state.selectedTrack?.title
+    }
+
+    private var displayedArtist: String? {
+        state.selectedLiveTrack?.artist ?? state.selectedTrack?.artist
+    }
+
+    @ViewBuilder
+    private var displayedArtwork: some View {
+        if let url = state.selectedLiveTrack?.thumbnailURL {
+            AsyncImage(url: url) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                AlbumArtworkView(artwork: 0)
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else {
+            AlbumArtworkView(artwork: state.selectedTrack?.artwork ?? 0)
+                .frame(width: 48, height: 48)
+        }
+    }
+
     var body: some View {
-        if let track = state.selectedTrack {
+        if let title = displayedTitle, let artist = displayedArtist {
             HStack(spacing: 4) {
                 Button { state.showsPlayer = true } label: {
                     HStack(spacing: 10) {
-                        AlbumArtworkView(artwork: track.artwork).frame(width: 48, height: 48)
+                        displayedArtwork
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(track.title).font(MusicfyTypography.cardTitle)
+                            Text(title).font(MusicfyTypography.cardTitle)
                                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                            Text(track.artist).font(MusicfyTypography.subtitle)
+                            Text(artist).font(MusicfyTypography.subtitle)
                                 .foregroundStyle(MusicfyTheme.secondary)
                                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         }
@@ -20,17 +45,20 @@ struct MiniPlayerView: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Open Now Playing: \(track.title), \(track.artist)")
+                .accessibilityLabel("Open Now Playing: \(title), \(artist)")
                 .accessibilityIdentifier("player.open")
                 Button { state.toggleDemoPlayback() } label: {
                     Image(systemName: state.isDemoPlaying ? "pause.fill" : "play.fill")
                         .font(.title3).frame(width: 44, height: 48)
                 }
-                .accessibilityLabel(state.isDemoPlaying ? "Pause silent demo" : "Play silent demo")
+                .disabled(state.selectedLiveTrack != nil)
+                .accessibilityLabel(state.selectedLiveTrack == nil ? (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo") : "Playback not connected")
                 if !dynamicTypeSize.isAccessibilitySize {
                     Button { state.step(1) } label: {
                         Image(systemName: "forward.end.fill").frame(width: 44, height: 48)
-                    }.accessibilityLabel("Next demo track")
+                    }
+                    .disabled(state.selectedLiveTrack != nil)
+                    .accessibilityLabel("Next demo track")
                 }
             }
             .buttonStyle(.plain)
