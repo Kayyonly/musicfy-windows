@@ -24,7 +24,7 @@ struct InnerTubeLiveSmoke {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { throw InnerTubeSmokeError.emptyQuery }
 
-        let tracks = try await InnerTubeSearchService().search(query: query)
+        let tracks = try await InnerTubeSearchService().search(query: query, diagnosticsOnEmpty: true)
         guard !tracks.isEmpty else { throw InnerTubeSmokeError.noResults(query) }
 
         print("PASS: InnerTube returned \(tracks.count) parsed results for '\(query)'.")

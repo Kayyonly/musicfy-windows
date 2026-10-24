@@ -40,7 +40,7 @@ struct InnerTubeSearchService {
         self.session = session
     }
 
-    func search(query: String) async throws -> [InnerTubeTrack] {
+    func search(query: String, diagnosticsOnEmpty: Bool = false) async throws -> [InnerTubeTrack] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return [] }
 
@@ -86,87 +86,119 @@ struct InnerTubeSearchService {
         guard let root = object as? [String: Any] else {
             throw InnerTubeSearchError.invalidResponse
         }
-        return Self.parseTracks(from: root)
+        let tracks = Self.parseTracks(from: root)
+        if tracks.isEmpty && diagnosticsOnEmpty {
+            print("InnerTube response shape: \(Self.responseShapeSummary(from: root))")
+        }
+        return tracks
     }
 
     /// Kept internal so fixture-based XCTest can verify the parser without network access.
     static func parseTracks(from root: [String: Any]) -> [InnerTubeTrack] {
-        guard
-            let contents = root["contents"] as? [String: Any],
-            let tabbed = contents["tabbedSearchResultsRenderer"] as? [String: Any],
-            let tabs = tabbed["tabs"] as? [[String: Any]],
-            let tab = tabs.first?["tabRenderer"] as? [String: Any],
-            let tabContent = tab["content"] as? [String: Any],
-            let sectionList = tabContent["sectionListRenderer"] as? [String: Any],
-            let sections = sectionList["contents"] as? [[String: Any]]
-        else { return [] }
+        // Do not assume every WEB_REMIX response uses the same tabbed-search
+        // wrapper. Search can expose music shelves under different section
+        // renderers as YouTube changes its internal response layout.
+        var renderers: [[String: Any]] = []
+        func collectRenderers(in value: Any, depth: Int = 0) {
+            guard depth < 64 else { return }
+            if let dictionary = value as? [String: Any] {
+                for (key, child) in dictionary {
+                    if key == "musicResponsiveListItemRenderer", let renderer = child as? [String: Any] {
+                        renderers.append(renderer)
+                    } else {
+                        collectRenderers(in: child, depth: depth + 1)
+                    }
+                }
+            } else if let array = value as? [Any] {
+                for child in array {
+                    collectRenderers(in: child, depth: depth + 1)
+                }
+            }
+        }
+        collectRenderers(in: root)
 
         var tracks: [InnerTubeTrack] = []
         var seenIDs = Set<String>()
-        for section in sections {
+        for renderer in renderers {
             guard
-                let shelf = section["musicShelfRenderer"] as? [String: Any],
-                let items = shelf["contents"] as? [[String: Any]]
+                let columns = renderer["flexColumns"] as? [[String: Any]],
+                let firstColumn = columns.first,
+                let title = Self.runs(in: firstColumn).compactMap({ $0["text"] as? String }).joined().nilIfEmpty
             else { continue }
 
-            for item in items {
+            let videoID = (renderer["playlistItemData"] as? [String: Any])?["videoId"] as? String
+                ?? (((renderer["navigationEndpoint"] as? [String: Any])?["watchEndpoint"] as? [String: Any])?["videoId"] as? String)
+            guard let videoID, !videoID.isEmpty, !seenIDs.contains(videoID) else { continue }
+
+            let allRuns = columns.flatMap { Self.runs(in: $0) }
+            var uniqueArtistNames: [String] = []
+            for run in allRuns {
                 guard
-                    let renderer = item["musicResponsiveListItemRenderer"] as? [String: Any],
-                    let columns = renderer["flexColumns"] as? [[String: Any]],
-                    let firstColumn = columns.first,
-                    let title = Self.runs(in: firstColumn).compactMap({ $0["text"] as? String }).joined().nilIfEmpty
+                    let text = run["text"] as? String,
+                    let endpoint = run["navigationEndpoint"] as? [String: Any],
+                    let browse = endpoint["browseEndpoint"] as? [String: Any],
+                    let browseID = browse["browseId"] as? String,
+                    browseID.hasPrefix("UC")
                 else { continue }
-                let videoID = (renderer["playlistItemData"] as? [String: Any])?["videoId"] as? String
-                    ?? (((renderer["navigationEndpoint"] as? [String: Any])?["watchEndpoint"] as? [String: Any])?["videoId"] as? String)
-                guard let videoID, !videoID.isEmpty, !seenIDs.contains(videoID) else { continue }
-
-                let allRuns = columns.flatMap { Self.runs(in: $0) }
-                var uniqueArtistNames: [String] = []
-                for run in allRuns {
-                    guard
-                        let text = run["text"] as? String,
-                        let endpoint = run["navigationEndpoint"] as? [String: Any],
-                        let browse = endpoint["browseEndpoint"] as? [String: Any],
-                        let browseID = browse["browseId"] as? String,
-                        browseID.hasPrefix("UC")
-                    else { continue }
-                    if !uniqueArtistNames.contains(text) { uniqueArtistNames.append(text) }
-                }
-                let fallbackArtist = columns.dropFirst().first
-                    .flatMap { Self.runs(in: $0).compactMap { $0["text"] as? String }.first }
-                    .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
-                let artist = uniqueArtistNames.isEmpty ? (fallbackArtist ?? "Unknown artist") : uniqueArtistNames.joined(separator: ", ")
-
-                let albumTitle = allRuns.first { run in
-                    guard
-                        run["text"] is String,
-                        let endpoint = run["navigationEndpoint"] as? [String: Any],
-                        let browse = endpoint["browseEndpoint"] as? [String: Any],
-                        let browseID = browse["browseId"] as? String
-                    else { return false }
-                    return browseID.hasPrefix("MPRE") || browseID.hasPrefix("OLAK")
-                }?["text"] as? String
-
-                let durationText = allRuns.compactMap { $0["text"] as? String }.first {
-                    $0.range(of: #"^\d{1,2}:\d{2}(?::\d{2})?$"#, options: .regularExpression) != nil
-                }
-                let thumbnailContainer = ((renderer["thumbnail"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])
-                let thumbnailObject = thumbnailContainer?["thumbnail"] as? [String: Any]
-                let thumbnailString = (thumbnailObject?["thumbnails"] as? [[String: Any]])?.last?["url"] as? String
-                let thumbnailURL = thumbnailString.flatMap(URL.init(string:))
-
-                tracks.append(InnerTubeTrack(
-                    id: videoID,
-                    title: title,
-                    artist: artist,
-                    albumTitle: albumTitle,
-                    durationText: durationText,
-                    thumbnailURL: thumbnailURL
-                ))
-                seenIDs.insert(videoID)
+                if !uniqueArtistNames.contains(text) { uniqueArtistNames.append(text) }
             }
+            let fallbackArtist = columns.dropFirst().first
+                .flatMap { Self.runs(in: $0).compactMap { $0["text"] as? String }.first }
+                .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+            let artist = uniqueArtistNames.isEmpty ? (fallbackArtist ?? "Unknown artist") : uniqueArtistNames.joined(separator: ", ")
+
+            let albumTitle = allRuns.first { run in
+                guard
+                    run["text"] is String,
+                    let endpoint = run["navigationEndpoint"] as? [String: Any],
+                    let browse = endpoint["browseEndpoint"] as? [String: Any],
+                    let browseID = browse["browseId"] as? String
+                else { return false }
+                return browseID.hasPrefix("MPRE") || browseID.hasPrefix("OLAK")
+            }?["text"] as? String
+
+            let durationText = allRuns.compactMap { $0["text"] as? String }.first {
+                $0.range(of: #"^\d{1,2}:\d{2}(?::\d{2})?$"#, options: .regularExpression) != nil
+            }
+            let thumbnailContainer = ((renderer["thumbnail"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])
+            let thumbnailObject = thumbnailContainer?["thumbnail"] as? [String: Any]
+            let thumbnailString = (thumbnailObject?["thumbnails"] as? [[String: Any]])?.last?["url"] as? String
+            let thumbnailURL = thumbnailString.flatMap(URL.init(string:))
+
+            tracks.append(InnerTubeTrack(
+                id: videoID,
+                title: title,
+                artist: artist,
+                albumTitle: albumTitle,
+                durationText: durationText,
+                thumbnailURL: thumbnailURL
+            ))
+            seenIDs.insert(videoID)
         }
         return tracks
+    }
+
+    private static func responseShapeSummary(from root: [String: Any]) -> String {
+        var rendererKeys = Set<String>()
+        func visit(_ value: Any, depth: Int = 0) {
+            guard depth < 10, rendererKeys.count < 40 else { return }
+            if let dictionary = value as? [String: Any] {
+                for (key, child) in dictionary {
+                    if key.hasSuffix("Renderer") { rendererKeys.insert(key) }
+                    visit(child, depth: depth + 1)
+                    if rendererKeys.count >= 40 { return }
+                }
+            } else if let array = value as? [Any] {
+                for child in array {
+                    visit(child, depth: depth + 1)
+                    if rendererKeys.count >= 40 { return }
+                }
+            }
+        }
+        visit(root)
+        let rootKeys = root.keys.sorted().joined(separator: ",")
+        let foundRenderers = rendererKeys.sorted().joined(separator: ",")
+        return "rootKeys=[\(rootKeys)] rendererKeys=[\(foundRenderers)]"
     }
 
     private static func runs(in column: [String: Any]) -> [[String: Any]] {
