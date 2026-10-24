@@ -45,6 +45,96 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | tee "$RUNNER_TEMP/ios-xcodebuild.log"
 
+      - name: Smoke-test embedded YouTube player navigation
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          out_dir="$RUNNER_TEMP/MusicfyEmbeddedPlayerSmoke"
+          mkdir -p "$out_dir"
+
+          # Select the newest available iPhone 16 runtime, matching the xcodebuild destination.
+          device_id="$(python3 - <<'PY'
+          import json, re, subprocess, sys
+          payload = json.loads(subprocess.check_output(
+              ["xcrun", "simctl", "list", "devices", "available", "--json"], text=True
+          ))
+          def runtime_version(runtime):
+              match = re.search(r"iOS-(\d+)-(\d+)", runtime)
+              return tuple(map(int, match.groups())) if match else (0, 0)
+          candidates = []
+          for runtime, devices in payload.get("devices", {}).items():
+              for device in devices:
+                  if device.get("name") == "iPhone 16" and device.get("isAvailable"):
+                      candidates.append((runtime_version(runtime), device["udid"]))
+          if not candidates:
+              print("No available iPhone 16 simulator was found.", file=sys.stderr)
+              raise SystemExit(2)
+          print(max(candidates)[1])
+          PY
+          )"
+          echo "Embedded-player smoke device: $device_id" | tee "$out_dir/device.txt"
+
+          app_path="$RUNNER_TEMP/MusicfyDerivedData/Build/Products/Debug-iphonesimulator/MusicfyIOS.app"
+          test -d "$app_path"
+          xcrun simctl boot "$device_id" >/dev/null 2>&1 || true
+          xcrun simctl bootstatus "$device_id" -b 2>&1 | tee "$out_dir/boot.log"
+          xcrun simctl install "$device_id" "$app_path"
+          xcrun simctl status_bar "$device_id" override --time "9:41" --dataNetwork wifi \
+            --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 \
+            --batteryState charged --batteryLevel 100 >/dev/null 2>&1 || true
+
+          bundle_id="com.musicfy.MusicfyIOS"
+          app_data="$(xcrun simctl get_app_container "$device_id" "$bundle_id" data)"
+          readiness_file="$app_data/Documents/musicfy-screenshot-ready.json"
+          status_file="$app_data/Documents/youtube-player-status.json"
+          rm -f "$readiness_file" "$status_file"
+
+          xcrun simctl launch --terminate-running-process "$device_id" "$bundle_id" \
+            -musicfy-screenshot now-playing-youtube 2>&1 | tee "$out_dir/launch.log"
+          status=""
+          deadline=$((SECONDS + 40))
+          while (( SECONDS < deadline )); do
+            if [[ -f "$status_file" ]]; then
+              cp "$status_file" "$out_dir/youtube-player-status.json"
+              status="$(python3 - "$status_file" <<'PY'
+          import json, sys
+          try:
+              print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", ""))
+          except (OSError, json.JSONDecodeError):
+              print("")
+          PY
+              )"
+              if [[ "$status" == "page-loaded" || "$status" == "failed" ]]; then break; fi
+            fi
+            sleep 1
+          done
+
+          sleep 2
+          xcrun simctl io "$device_id" screenshot "$out_dir/now-playing-youtube.png" >/dev/null 2>&1 || true
+          if [[ -f "$readiness_file" ]]; then
+            cp "$readiness_file" "$out_dir/screenshot-readiness.json"
+          else
+            echo "Screenshot readiness file was not found." > "$out_dir/readiness-warning.txt"
+          fi
+          xcrun simctl spawn "$device_id" log show --last 3m --style compact \
+            --predicate 'process == "MusicfyIOS"' > "$out_dir/app.log" 2>&1 || true
+          if [[ -f "$status_file" ]]; then cp "$status_file" "$out_dir/youtube-player-status.json"; fi
+
+          if [[ "$status" != "page-loaded" ]]; then
+            echo "Embedded YouTube page did not finish loading. Last status: ${status:-none}" >&2
+            cat "$out_dir/youtube-player-status.json" 2>/dev/null || true
+            exit 1
+          fi
+          python3 - "$out_dir/screenshot-readiness.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              data = json.load(handle)
+          assert data == {"ready": True, "route": "now-playing-youtube"}, data
+          print("Embedded player route appeared and the YouTube embed page finished navigation.")
+          print("This confirms page navigation only; it does not assert that the video is playable or audio is audible.")
+          PY
+
       - name: Upload Xcode logs and test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,5 +143,6 @@ jobs:
           path: |
             ${{ runner.temp }}/ios-xcodebuild.log
             ${{ runner.temp }}/MusicfyIOS.xcresult
+            ${{ runner.temp }}/MusicfyEmbeddedPlayerSmoke/**
           if-no-files-found: ignore
           retention-days: 7

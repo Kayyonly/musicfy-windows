@@ -8,6 +8,7 @@ struct NowPlayingView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var path: [PlayerDestination]
+    @State private var embeddedPlayerStatusMessage = "Waiting for embedded YouTube player…"
 
     init() {
         var initialPath: [PlayerDestination] = []
@@ -51,7 +52,14 @@ struct NowPlayingView: View {
             .background(MusicfyTheme.background.ignoresSafeArea())
             #if DEBUG
             .accessibilityIdentifier("destination.now-playing")
-            .onAppear { state.reportScreenshotReady("now-playing") }
+            .onAppear {
+                let arguments = ProcessInfo.processInfo.arguments
+                if let markerIndex = arguments.firstIndex(of: "-musicfy-screenshot"),
+                   markerIndex + 1 < arguments.count {
+                    let requestedRoute = arguments[markerIndex + 1]
+                    state.reportScreenshotReady(requestedRoute == "now-playing-youtube" ? requestedRoute : "now-playing")
+                }
+            }
             #endif
             .navigationTitle("Now Playing")
             .navigationBarTitleDisplayMode(.inline)
@@ -98,10 +106,23 @@ struct NowPlayingView: View {
     private var artwork: some View {
         Group {
             if let liveTrack = state.selectedLiveTrack {
-                YouTubeEmbeddedPlayerView(videoID: liveTrack.id)
+                VStack(spacing: 8) {
+                    YouTubeEmbeddedPlayerView(videoID: liveTrack.id) { status in
+                        DispatchQueue.main.async {
+                            embeddedPlayerStatusMessage = status.message
+                            state.reportEmbeddedPlayerStatus(status.code, message: status.message)
+                        }
+                    }
                     .frame(maxWidth: .infinity)
                     // YouTube's embedded player must remain visible and at least 200×200.
                     .frame(height: 240)
+
+                    Text(embeddedPlayerStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(MusicfyTheme.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("youtube-player-status")
+                }
             } else if let track = state.selectedTrack {
                 AlbumArtworkView(artwork: track.artwork)
                     .aspectRatio(1, contentMode: .fit)
@@ -282,11 +303,39 @@ struct NowPlayingView: View {
 
 /// Uses YouTube's own embedded player. The player UI remains visible and owns
 /// play/pause/seek controls; this is not an audio-only or background player.
+private enum YouTubeEmbeddedPlayerLoadStatus {
+    case loading
+    case pageLoaded
+    case failed(String)
+
+    var code: String {
+        switch self {
+        case .loading: return "loading"
+        case .pageLoaded: return "page-loaded"
+        case .failed: return "failed"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .loading:
+            return "Loading embedded YouTube player…"
+        case .pageLoaded:
+            return "YouTube player page loaded. Video availability and playback are not confirmed by this check."
+        case .failed(let detail):
+            return "Could not load the YouTube player page: \(detail)"
+        }
+    }
+}
+
+/// Uses YouTube's own embedded player. The player UI remains visible and owns
+/// play/pause/seek controls; this is not an audio-only or background player.
 private struct YouTubeEmbeddedPlayerView: UIViewRepresentable {
     let videoID: String
+    let onStatusChange: (YouTubeEmbeddedPlayerLoadStatus) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onStatusChange: onStatusChange)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -299,18 +348,24 @@ private struct YouTubeEmbeddedPlayerView: UIViewRepresentable {
         webView.scrollView.backgroundColor = .black
         webView.isOpaque = false
         webView.scrollView.isScrollEnabled = false
+        webView.navigationDelegate = context.coordinator
+        context.coordinator.onStatusChange = onStatusChange
         load(videoID, in: webView, coordinator: context.coordinator)
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onStatusChange = onStatusChange
         guard context.coordinator.loadedVideoID != videoID else { return }
         load(videoID, in: webView, coordinator: context.coordinator)
     }
 
     private func load(_ videoID: String, in webView: WKWebView, coordinator: Coordinator) {
         // Treat the ID as untrusted input and only permit the standard YouTube ID alphabet.
-        guard videoID.range(of: "^[A-Za-z0-9_-]{6,20}$", options: .regularExpression) != nil else { return }
+        guard videoID.range(of: "^[A-Za-z0-9_-]{6,20}$", options: .regularExpression) != nil else {
+            coordinator.onStatusChange?(.failed("The video ID format is invalid."))
+            return
+        }
 
         var components = URLComponents()
         components.scheme = "https"
@@ -321,8 +376,12 @@ private struct YouTubeEmbeddedPlayerView: UIViewRepresentable {
             URLQueryItem(name: "controls", value: "1"),
             URLQueryItem(name: "autoplay", value: "0")
         ]
-        guard let url = components.url else { return }
+        guard let url = components.url else {
+            coordinator.onStatusChange?(.failed("Could not build the embed URL."))
+            return
+        }
 
+        coordinator.onStatusChange?(.loading)
         var request = URLRequest(url: url)
         // YouTube documents the bundle ID as the app identity for embedded players in WKWebView.
         request.setValue("https://com.musicfy.musicfyios", forHTTPHeaderField: "Referer")
@@ -330,8 +389,29 @@ private struct YouTubeEmbeddedPlayerView: UIViewRepresentable {
         coordinator.loadedVideoID = videoID
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, WKNavigationDelegate {
         var loadedVideoID: String?
+        var onStatusChange: ((YouTubeEmbeddedPlayerLoadStatus) -> Void)?
+
+        init(onStatusChange: ((YouTubeEmbeddedPlayerLoadStatus) -> Void)?) {
+            self.onStatusChange = onStatusChange
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            onStatusChange?(.loading)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            onStatusChange?(.pageLoaded)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            onStatusChange?(.failed(error.localizedDescription))
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            onStatusChange?(.failed(error.localizedDescription))
+        }
     }
 }
 

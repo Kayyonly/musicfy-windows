@@ -48,6 +48,20 @@ final class MusicfyDemoState: ObservableObject {
                 tab = .library
             case "profile":
                 tab = .profile
+            case "now-playing-youtube":
+                // A fixed public sample video makes the CI route deterministic and
+                // avoids depending on an InnerTube network search in this UI smoke test.
+                let testTrack = InnerTubeTrack(
+                    id: "M7lc1UVf-VE",
+                    title: "Embedded YouTube Player Test",
+                    artist: "YouTube",
+                    albumTitle: nil,
+                    durationText: nil,
+                    thumbnailURL: URL(string: "https://i.ytimg.com/vi/M7lc1UVf-VE/hqdefault.jpg")
+                )
+                selectedLiveTrack = testTrack
+                selectedID = testTrack.id
+                showsPlayer = true
             case "now-playing", "queue", "lyrics":
                 showsPlayer = true
             default:
@@ -114,6 +128,30 @@ final class MusicfyDemoState: ObservableObject {
         searchHistory.removeAll { $0.caseInsensitiveCompare(term) == .orderedSame }
         searchHistory.insert(term, at: 0)
         searchHistory = Array(searchHistory.prefix(5))
+    }
+
+    /// Writes navigation diagnostics only for the explicit Debug-only player smoke route.
+    func reportEmbeddedPlayerStatus(_ status: String, message: String) {
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-musicfy-screenshot"),
+              index + 1 < arguments.count,
+              arguments[index + 1] == "now-playing-youtube",
+              let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let evidence: [String: Any] = [
+            "route": "now-playing-youtube",
+            "status": status,
+            "message": message
+        ]
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
+            try data.write(to: directory.appendingPathComponent("youtube-player-status.json"), options: .atomic)
+            print("MUSICFY_YOUTUBE_PLAYER_STATUS \(status): \(message)")
+        } catch {
+            print("Embedded-player status could not be written: \(error)")
+        }
+#endif
     }
 
     /// Only the simulator harness requests this route. A screenshot is not ready
