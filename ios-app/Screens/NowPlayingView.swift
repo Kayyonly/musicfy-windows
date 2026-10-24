@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import WebKit
 
 struct NowPlayingView: View {
     @EnvironmentObject private var state: MusicfyDemoState
@@ -34,8 +36,10 @@ struct NowPlayingView: View {
                     VStack(spacing: MusicfySpacing.section) {
                         artwork
                         trackInformation
-                        progressControl
-                        transportControls
+                        if state.selectedLiveTrack == nil {
+                            progressControl
+                            transportControls
+                        }
                         utilityControls
                     }
                     .padding(.horizontal, MusicfySpacing.page)
@@ -94,19 +98,10 @@ struct NowPlayingView: View {
     private var artwork: some View {
         Group {
             if let liveTrack = state.selectedLiveTrack {
-                AsyncImage(url: liveTrack.thumbnailURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    AlbumArtworkView(artwork: 0)
-                }
-                .aspectRatio(1, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous)
-                        .stroke(MusicfyTheme.primary.opacity(0.12), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.22), radius: 24, y: 12)
-                .accessibilityLabel("Artwork for \(liveTrack.title)")
+                YouTubeEmbeddedPlayerView(videoID: liveTrack.id)
+                    .frame(maxWidth: .infinity)
+                    // YouTube's embedded player must remain visible and at least 200×200.
+                    .frame(height: 240)
             } else if let track = state.selectedTrack {
                 AlbumArtworkView(artwork: track.artwork)
                     .aspectRatio(1, contentMode: .fit)
@@ -179,7 +174,7 @@ struct NowPlayingView: View {
         HStack(spacing: 18) {
             controlButton(symbol: "backward.fill", label: "Previous track", size: 46) { state.step(-1) }
                 .disabled(state.selectedLiveTrack != nil)
-            controlButton(symbol: state.isDemoPlaying ? "pause.fill" : "play.fill", label: state.selectedLiveTrack != nil ? "Playback not connected" : (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo"), size: 68) {
+            controlButton(symbol: state.isDemoPlaying ? "pause.fill" : "play.fill", label: state.selectedLiveTrack != nil ? "Use YouTube player controls" : (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo"), size: 68) {
                 state.toggleDemoPlayback()
             }
             .disabled(state.selectedLiveTrack != nil)
@@ -232,7 +227,7 @@ struct NowPlayingView: View {
                 navigationLink(.lyrics, title: "Lyrics", symbol: "quote.bubble")
             }
 
-            Text(state.selectedLiveTrack == nil ? "UI demo · no audio" : "Use Open in YouTube Music for official playback")
+            Text(state.selectedLiveTrack == nil ? "UI demo · no audio" : "YouTube embedded player · foreground playback only")
                 .font(MusicfyTypography.subtitle)
                 .foregroundStyle(MusicfyTheme.secondary)
                 .frame(maxWidth: .infinity)
@@ -284,3 +279,59 @@ struct NowPlayingView: View {
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
+
+/// Uses YouTube's own embedded player. The player UI remains visible and owns
+/// play/pause/seek controls; this is not an audio-only or background player.
+private struct YouTubeEmbeddedPlayerView: UIViewRepresentable {
+    let videoID: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = .all
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.backgroundColor = .black
+        webView.scrollView.backgroundColor = .black
+        webView.isOpaque = false
+        webView.scrollView.isScrollEnabled = false
+        load(videoID, in: webView, coordinator: context.coordinator)
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.loadedVideoID != videoID else { return }
+        load(videoID, in: webView, coordinator: context.coordinator)
+    }
+
+    private func load(_ videoID: String, in webView: WKWebView, coordinator: Coordinator) {
+        // Treat the ID as untrusted input and only permit the standard YouTube ID alphabet.
+        guard videoID.range(of: "^[A-Za-z0-9_-]{6,20}$", options: .regularExpression) != nil else { return }
+
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "www.youtube.com"
+        components.path = "/embed/\(videoID)"
+        components.queryItems = [
+            URLQueryItem(name: "playsinline", value: "1"),
+            URLQueryItem(name: "controls", value: "1"),
+            URLQueryItem(name: "autoplay", value: "0")
+        ]
+        guard let url = components.url else { return }
+
+        var request = URLRequest(url: url)
+        // YouTube documents the bundle ID as the app identity for embedded players in WKWebView.
+        request.setValue("https://com.musicfy.musicfyios", forHTTPHeaderField: "Referer")
+        webView.load(request)
+        coordinator.loadedVideoID = videoID
+    }
+
+    final class Coordinator {
+        var loadedVideoID: String?
+    }
+}
+

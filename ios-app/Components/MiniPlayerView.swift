@@ -52,7 +52,7 @@ struct MiniPlayerView: View {
                         .font(.title3).frame(width: 44, height: 48)
                 }
                 .disabled(state.selectedLiveTrack != nil)
-                .accessibilityLabel(state.selectedLiveTrack == nil ? (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo") : "Playback not connected")
+                .accessibilityLabel(state.selectedLiveTrack == nil ? (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo") : "Open Now Playing for YouTube player controls")
                 if !dynamicTypeSize.isAccessibilitySize {
                     Button { state.step(1) } label: {
                         Image(systemName: "forward.end.fill").frame(width: 44, height: 48)
