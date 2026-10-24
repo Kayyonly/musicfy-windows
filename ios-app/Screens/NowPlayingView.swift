@@ -1,14 +1,10 @@
 import SwiftUI
-import UIKit
-import WebKit
 
 struct NowPlayingView: View {
     @EnvironmentObject private var state: MusicfyDemoState
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var path: [PlayerDestination]
-    @State private var embeddedPlayerStatusMessage = "Waiting for embedded YouTube player…"
 
     init() {
         var initialPath: [PlayerDestination] = []
@@ -37,10 +33,8 @@ struct NowPlayingView: View {
                     VStack(spacing: MusicfySpacing.section) {
                         artwork
                         trackInformation
-                        if state.selectedLiveTrack == nil {
-                            progressControl
-                            transportControls
-                        }
+                        progressControl
+                        transportControls
                         utilityControls
                     }
                     .padding(.horizontal, MusicfySpacing.page)
@@ -52,14 +46,7 @@ struct NowPlayingView: View {
             .background(MusicfyTheme.background.ignoresSafeArea())
             #if DEBUG
             .accessibilityIdentifier("destination.now-playing")
-            .onAppear {
-                let arguments = ProcessInfo.processInfo.arguments
-                if let markerIndex = arguments.firstIndex(of: "-musicfy-screenshot"),
-                   markerIndex + 1 < arguments.count {
-                    let requestedRoute = arguments[markerIndex + 1]
-                    state.reportScreenshotReady(requestedRoute == "now-playing-youtube" ? requestedRoute : "now-playing")
-                }
-            }
+            .onAppear { state.reportScreenshotReady("now-playing") }
             #endif
             .navigationTitle("Now Playing")
             .navigationBarTitleDisplayMode(.inline)
@@ -106,23 +93,19 @@ struct NowPlayingView: View {
     private var artwork: some View {
         Group {
             if let liveTrack = state.selectedLiveTrack {
-                VStack(spacing: 8) {
-                    YouTubeEmbeddedPlayerView(videoID: liveTrack.id) { status in
-                        DispatchQueue.main.async {
-                            embeddedPlayerStatusMessage = status.message
-                            state.reportEmbeddedPlayerStatus(status.code, message: status.message)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    // YouTube's embedded player must remain visible and at least 200×200.
-                    .frame(height: 240)
-
-                    Text(embeddedPlayerStatusMessage)
-                        .font(.caption)
-                        .foregroundStyle(MusicfyTheme.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("youtube-player-status")
+                AsyncImage(url: liveTrack.thumbnailURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    AlbumArtworkView(artwork: 0)
                 }
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous)
+                        .stroke(MusicfyTheme.primary.opacity(0.12), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.22), radius: 24, y: 12)
+                .accessibilityLabel("Artwork for \(liveTrack.title)")
             } else if let track = state.selectedTrack {
                 AlbumArtworkView(artwork: track.artwork)
                     .aspectRatio(1, contentMode: .fit)
@@ -195,7 +178,7 @@ struct NowPlayingView: View {
         HStack(spacing: 18) {
             controlButton(symbol: "backward.fill", label: "Previous track", size: 46) { state.step(-1) }
                 .disabled(state.selectedLiveTrack != nil)
-            controlButton(symbol: state.isDemoPlaying ? "pause.fill" : "play.fill", label: state.selectedLiveTrack != nil ? "Use YouTube player controls" : (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo"), size: 68) {
+            controlButton(symbol: state.isDemoPlaying ? "pause.fill" : "play.fill", label: state.selectedLiveTrack != nil ? "Playback source not connected" : (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo"), size: 68) {
                 state.toggleDemoPlayback()
             }
             .disabled(state.selectedLiveTrack != nil)
@@ -207,21 +190,6 @@ struct NowPlayingView: View {
 
     private var utilityControls: some View {
         VStack(spacing: 12) {
-            if let liveTrack = state.selectedLiveTrack,
-               let playbackURL = URL(string: "https://music.youtube.com/watch?v=\(liveTrack.id)") {
-                Button {
-                    openURL(playbackURL)
-                } label: {
-                    Label("Open in YouTube Music", systemImage: "play.rectangle.fill")
-                        .font(MusicfyTypography.subtitle.weight(.semibold))
-                        .foregroundStyle(MusicfyTheme.primary)
-                        .frame(maxWidth: .infinity, minHeight: 48)
-                        .modifier(MusicfyGlass(radius: 16))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Play \(liveTrack.title) by \(liveTrack.artist) in YouTube Music")
-            }
-
             HStack(spacing: 12) {
                 Button { state.isShuffle.toggle() } label: {
                     Label("Shuffle", systemImage: "shuffle")
@@ -248,12 +216,12 @@ struct NowPlayingView: View {
                 navigationLink(.lyrics, title: "Lyrics", symbol: "quote.bubble")
             }
 
-            Text(state.selectedLiveTrack == nil ? "UI demo · no audio" : "YouTube embedded player · foreground playback only")
+            Text(state.selectedLiveTrack == nil ? "UI demo · no audio" : "Native audio playback not connected yet")
                 .font(MusicfyTypography.subtitle)
                 .foregroundStyle(MusicfyTheme.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 2)
-                .accessibilityLabel(state.selectedLiveTrack == nil ? "UI demo, no audio" : "Open the selected song in YouTube Music for playback")
+                .accessibilityLabel(state.selectedLiveTrack == nil ? "UI demo, no audio" : "Native audio playback is not connected yet")
         }
     }
 
@@ -300,118 +268,3 @@ struct NowPlayingView: View {
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
-
-/// Uses YouTube's own embedded player. The player UI remains visible and owns
-/// play/pause/seek controls; this is not an audio-only or background player.
-private enum YouTubeEmbeddedPlayerLoadStatus {
-    case loading
-    case pageLoaded
-    case failed(String)
-
-    var code: String {
-        switch self {
-        case .loading: return "loading"
-        case .pageLoaded: return "page-loaded"
-        case .failed: return "failed"
-        }
-    }
-
-    var message: String {
-        switch self {
-        case .loading:
-            return "Loading embedded YouTube player…"
-        case .pageLoaded:
-            return "YouTube player page loaded. Video availability and playback are not confirmed by this check."
-        case .failed(let detail):
-            return "Could not load the YouTube player page: \(detail)"
-        }
-    }
-}
-
-/// Uses YouTube's own embedded player. The player UI remains visible and owns
-/// play/pause/seek controls; this is not an audio-only or background player.
-private struct YouTubeEmbeddedPlayerView: UIViewRepresentable {
-    let videoID: String
-    let onStatusChange: (YouTubeEmbeddedPlayerLoadStatus) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onStatusChange: onStatusChange)
-    }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.allowsInlineMediaPlayback = true
-        configuration.mediaTypesRequiringUserActionForPlayback = .all
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.backgroundColor = .black
-        webView.scrollView.backgroundColor = .black
-        webView.isOpaque = false
-        webView.scrollView.isScrollEnabled = false
-        webView.navigationDelegate = context.coordinator
-        context.coordinator.onStatusChange = onStatusChange
-        load(videoID, in: webView, coordinator: context.coordinator)
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        context.coordinator.onStatusChange = onStatusChange
-        guard context.coordinator.loadedVideoID != videoID else { return }
-        load(videoID, in: webView, coordinator: context.coordinator)
-    }
-
-    private func load(_ videoID: String, in webView: WKWebView, coordinator: Coordinator) {
-        // Treat the ID as untrusted input and only permit the standard YouTube ID alphabet.
-        guard videoID.range(of: "^[A-Za-z0-9_-]{6,20}$", options: .regularExpression) != nil else {
-            coordinator.onStatusChange?(.failed("The video ID format is invalid."))
-            return
-        }
-
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "www.youtube.com"
-        components.path = "/embed/\(videoID)"
-        components.queryItems = [
-            URLQueryItem(name: "playsinline", value: "1"),
-            URLQueryItem(name: "controls", value: "1"),
-            URLQueryItem(name: "autoplay", value: "0")
-        ]
-        guard let url = components.url else {
-            coordinator.onStatusChange?(.failed("Could not build the embed URL."))
-            return
-        }
-
-        coordinator.onStatusChange?(.loading)
-        var request = URLRequest(url: url)
-        // YouTube documents the bundle ID as the app identity for embedded players in WKWebView.
-        request.setValue("https://com.musicfy.musicfyios", forHTTPHeaderField: "Referer")
-        webView.load(request)
-        coordinator.loadedVideoID = videoID
-    }
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        var loadedVideoID: String?
-        var onStatusChange: ((YouTubeEmbeddedPlayerLoadStatus) -> Void)?
-
-        init(onStatusChange: ((YouTubeEmbeddedPlayerLoadStatus) -> Void)?) {
-            self.onStatusChange = onStatusChange
-        }
-
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            onStatusChange?(.loading)
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            onStatusChange?(.pageLoaded)
-        }
-
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            onStatusChange?(.failed(error.localizedDescription))
-        }
-
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            onStatusChange?(.failed(error.localizedDescription))
-        }
-    }
-}
-
