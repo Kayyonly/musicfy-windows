@@ -3,6 +3,7 @@ import SwiftUI
 struct NowPlayingView: View {
     @EnvironmentObject private var state: MusicfyDemoState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var path: [PlayerDestination]
 
@@ -190,6 +191,21 @@ struct NowPlayingView: View {
 
     private var utilityControls: some View {
         VStack(spacing: 12) {
+            if let liveTrack = state.selectedLiveTrack,
+               let playbackURL = URL(string: "https://music.youtube.com/watch?v=\(liveTrack.id)") {
+                Button {
+                    openURL(playbackURL)
+                } label: {
+                    Label("Open in YouTube Music", systemImage: "play.rectangle.fill")
+                        .font(MusicfyTypography.subtitle.weight(.semibold))
+                        .foregroundStyle(MusicfyTheme.primary)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .modifier(MusicfyGlass(radius: 16))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Play \(liveTrack.title) by \(liveTrack.artist) in YouTube Music")
+            }
+
             HStack(spacing: 12) {
                 Button { state.isShuffle.toggle() } label: {
                     Label("Shuffle", systemImage: "shuffle")
@@ -216,12 +232,12 @@ struct NowPlayingView: View {
                 navigationLink(.lyrics, title: "Lyrics", symbol: "quote.bubble")
             }
 
-            Text(state.selectedLiveTrack == nil ? "UI demo · no audio" : "Metadata selected · playback not connected")
+            Text(state.selectedLiveTrack == nil ? "UI demo · no audio" : "Use Open in YouTube Music for official playback")
                 .font(MusicfyTypography.subtitle)
                 .foregroundStyle(MusicfyTheme.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 2)
-                .accessibilityLabel("UI demo, no audio")
+                .accessibilityLabel(state.selectedLiveTrack == nil ? "UI demo, no audio" : "Open the selected song in YouTube Music for playback")
         }
     }
 
