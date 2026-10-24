@@ -1,0 +1,41 @@
+name: InnerTube Live Search Smoke Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/liquid-glass-ui-polish
+    paths:
+      - "ios-app/State/InnerTubeSearchService.swift"
+      - "ios-app/CI/InnerTubeLiveSmoke.swift"
+      - ".github/workflows/ios-innertube-live-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-search:
+    name: Query live YouTube Music metadata
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Compile smoke-test executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc \
+            ios-app/State/InnerTubeSearchService.swift \
+            ios-app/CI/InnerTubeLiveSmoke.swift \
+            -o "$RUNNER_TEMP/innertube-live-smoke"
+
+      - name: Search YouTube Music live
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/innertube-live-smoke" "Perunggu"
