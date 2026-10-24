@@ -4,33 +4,20 @@ struct SearchView: View {
     @EnvironmentObject private var state: MusicfyDemoState
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var isSearchFocused: Bool
-    @State private var category: SearchCategory = .all
     @State private var moodNotice: String?
-
-    private enum SearchCategory: String, CaseIterable, Identifiable {
-        case all = "All", music = "Music", artist = "Artist", album = "Album"
-        var id: String { rawValue }
-    }
+    @State private var liveResults: [InnerTubeTrack] = []
+    @State private var isSearchingLiveCatalog = false
+    @State private var liveSearchError: String?
+    private let searchService = InnerTubeSearchService()
 
     private let moods = ["Chill", "Commute", "Energize", "Feel good", "Focus", "Gaming", "Party", "Romance", "Sad", "Sleep"]
     private var query: String { state.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var matches: [MockTrack] {
-        guard !query.isEmpty else { return [] }
-        return state.tracks.filter { track in
-            switch category {
-            case .all, .music: return [track.title, track.artist, track.albumTitle].contains { $0.localizedCaseInsensitiveContains(query) }
-            case .artist: return track.artist.localizedCaseInsensitiveContains(query)
-            case .album: return track.albumTitle.localizedCaseInsensitiveContains(query)
-            }
-        }
-    }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: MusicfySpacing.section) {
                 PageHeader(title: "Search")
-                Text("Local UI demo").font(MusicfyTypography.subtitle).foregroundStyle(MusicfyTheme.secondary)
-                MusicfySearchField(title: "Search local demo catalog", text: $state.searchQuery, prompt: "Search tracks, artists, albums...", focus: $isSearchFocused)
+                Text("Search real YouTube Music metadata").font(MusicfyTypography.subtitle).foregroundStyle(MusicfyTheme.secondary)
+                MusicfySearchField(title: "Search YouTube Music", text: $state.searchQuery, prompt: "Search songs, artists, albums...", focus: $isSearchFocused)
                     .onSubmit { state.rememberSearch() }
                 if query.isEmpty {
                     if isSearchFocused && !state.searchHistory.isEmpty { history }
@@ -46,6 +33,7 @@ struct SearchView: View {
         .scrollContentBackground(.hidden)
         .background(MusicfyTheme.background.ignoresSafeArea())
         .scrollDismissesKeyboard(.interactively)
+        .task(id: query) { await searchLiveCatalog(for: query) }
         #if DEBUG
         .onAppear { state.reportScreenshotReady("search") }
         #endif
@@ -81,59 +69,105 @@ struct SearchView: View {
     }
 
     private var results: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
-                    ForEach(SearchCategory.allCases) { item in
-                        Button { category = item } label: {
-                            Text(item.rawValue).font(.subheadline.weight(.semibold)).padding(.horizontal, 16).frame(minHeight: MusicfySpacing.minimumTouch)
-                                .background(category == item ? MusicfyTheme.primary : MusicfyTheme.field, in: Capsule())
-                                .foregroundStyle(category == item ? MusicfyTheme.background : MusicfyTheme.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(category == item ? .isSelected : [])
-                        .accessibilityValue(category == item ? "Selected" : "Not selected")
-                        .accessibilityLabel("Filter by \(item.rawValue)")
-                    }
+        VStack(alignment: .leading, spacing: MusicfySpacing.section) {
+            SectionHeader(title: "YouTube Music results", subtitle: "Live catalog metadata")
+            if isSearchingLiveCatalog {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Searching YouTube Music…").font(MusicfyTypography.subtitle)
                 }
-            }
-            SectionHeader(title: "Top Results", subtitle: "Matching local metadata only")
-            if let top = matches.first {
-                Button {
-                    state.select(top)
-                    state.showsPlayer = true
-                } label: {
-                    AnyLayout(dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 16))) {
-                        AlbumArtworkView(artwork: top.artwork).frame(width: 144, height: 144)
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("TOP RESULT").font(.caption.weight(.bold)).tracking(1.1).foregroundStyle(MusicfyTheme.secondary)
-                            Text(top.title).font(MusicfyTypography.cardTitle).foregroundStyle(MusicfyTheme.primary).lineLimit(2)
-                            Text(top.artist).font(MusicfyTypography.subtitle).foregroundStyle(MusicfyTheme.secondary).lineLimit(2)
-                            Image(systemName: "play.circle.fill").font(.title).foregroundStyle(MusicfyTheme.primary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(12)
-                    .background(MusicfyTheme.artworkColors(top.artwork)[0].opacity(0.42), in: RoundedRectangle(cornerRadius: MusicfySpacing.radius, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Play demo preview for \(top.title) by \(top.artist)")
-                .accessibilityHint("Opens the local now playing demo; no audio is played")
-            }
-            SectionHeader(title: "Songs", subtitle: category == .all || category == .music ? "Matching title, artist, or album metadata" : "Matching \(category.rawValue.lowercased()) metadata")
-            if matches.isEmpty {
-                ContentUnavailableView("No local matches", systemImage: "magnifyingglass", description: Text("Try a title, artist, or album from this demo catalog."))
-                    .foregroundStyle(MusicfyTheme.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, MusicfySpacing.page)
-                    .accessibilityElement(children: .combine)
+                .foregroundStyle(MusicfyTheme.secondary)
+                .frame(maxWidth: .infinity, minHeight: 88)
+            } else if let liveSearchError {
+                ContentUnavailableView(
+                    "Search unavailable",
+                    systemImage: "wifi.exclamationmark",
+                    description: Text(liveSearchError)
+                )
+                .foregroundStyle(MusicfyTheme.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, MusicfySpacing.page)
+            } else if liveResults.isEmpty {
+                ContentUnavailableView(
+                    "No YouTube Music results",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try another song, artist, or album name.")
+                )
+                .foregroundStyle(MusicfyTheme.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, MusicfySpacing.page)
             } else {
+                SectionHeader(title: "Songs", subtitle: "\(liveResults.count) metadata results")
                 LazyVStack(spacing: 4) {
-                    ForEach(matches) { track in
-                        TrackRow(track: track, isSelected: state.selectedID == track.id) { state.select(track) }
+                    ForEach(liveResults) { track in
+                        HStack(spacing: 12) {
+                            AsyncImage(url: track.thumbnailURL) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: {
+                                AlbumArtworkView(artwork: 0)
+                            }
+                            .frame(width: 52, height: 52)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(track.title)
+                                    .font(MusicfyTypography.cardTitle)
+                                    .foregroundStyle(MusicfyTheme.primary)
+                                    .lineLimit(2)
+                                Text(track.artist)
+                                    .font(MusicfyTypography.subtitle)
+                                    .foregroundStyle(MusicfyTheme.secondary)
+                                    .lineLimit(1)
+                                if let albumTitle = track.albumTitle, !albumTitle.isEmpty {
+                                    Text(albumTitle)
+                                        .font(.caption)
+                                        .foregroundStyle(MusicfyTheme.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            if let durationText = track.durationText {
+                                Text(durationText)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(MusicfyTheme.secondary)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                        .accessibilityElement(children: .combine)
                     }
                 }
+                Text("Metadata only in this step; audio playback is not connected yet.")
+                    .font(.caption)
+                    .foregroundStyle(MusicfyTheme.secondary)
+                    .padding(.top, 8)
             }
         }
     }
+
+    private func searchLiveCatalog(for rawQuery: String) async {
+        let term = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard term.count >= 2 else {
+            liveResults = []
+            liveSearchError = nil
+            isSearchingLiveCatalog = false
+            return
+        }
+
+        isSearchingLiveCatalog = true
+        liveSearchError = nil
+        do {
+            try await Task.sleep(nanoseconds: 350_000_000)
+            let results = try await searchService.search(query: term)
+            try Task.checkCancellation()
+            liveResults = results
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            liveResults = []
+            liveSearchError = error.localizedDescription
+        }
+        isSearchingLiveCatalog = false
+    }
+
 }

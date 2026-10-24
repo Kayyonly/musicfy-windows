@@ -108,4 +108,50 @@ final class MusicfyDemoStateTests: XCTestCase {
             XCTAssertTrue(state.isFavorite)
         }
     }
+
+    func testInnerTubeSearchParserMapsSongMetadata() {
+        let response: [String: Any] = [
+            "contents": [
+                "tabbedSearchResultsRenderer": [
+                    "tabs": [[
+                        "tabRenderer": [
+                            "content": [
+                                "sectionListRenderer": [
+                                    "contents": [[
+                                        "musicShelfRenderer": [
+                                            "contents": [[
+                                                "musicResponsiveListItemRenderer": [
+                                                    "playlistItemData": ["videoId": "song-123"],
+                                                    "flexColumns": [
+                                                        ["musicResponsiveListItemFlexColumnRenderer": ["text": ["runs": [["text": "Ini Abadi"]]]]],
+                                                        ["musicResponsiveListItemFlexColumnRenderer": ["text": ["runs": [
+                                                            ["text": "Perunggu", "navigationEndpoint": ["browseEndpoint": ["browseId": "UCartist"]]],
+                                                            ["text": " • "],
+                                                            ["text": "Memorandum", "navigationEndpoint": ["browseEndpoint": ["browseId": "MPREalbum"]]],
+                                                            ["text": " • "],
+                                                            ["text": "3:52"]
+                                                        ]]]]
+                                                    ],
+                                                    "thumbnail": ["musicThumbnailRenderer": ["thumbnail": ["thumbnails": [["url": "https://example.com/art.jpg"]]]]]
+                                                ]
+                                            ]]
+                                        ]
+                                    ]]
+                                ]
+                            ]
+                        ]
+                    ]]
+                ]
+            ]
+        ]
+        let tracks = InnerTubeSearchService.parseTracks(from: response)
+        XCTAssertEqual(tracks.count, 1)
+        XCTAssertEqual(tracks.first?.id, "song-123")
+        XCTAssertEqual(tracks.first?.title, "Ini Abadi")
+        XCTAssertEqual(tracks.first?.artist, "Perunggu")
+        XCTAssertEqual(tracks.first?.albumTitle, "Memorandum")
+        XCTAssertEqual(tracks.first?.durationText, "3:52")
+        XCTAssertEqual(tracks.first?.thumbnailURL?.absoluteString, "https://example.com/art.jpg")
+    }
+
 }

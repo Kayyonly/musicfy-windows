@@ -124,7 +124,7 @@ def audit():
     all_swift = set(ROOT.rglob('*.swift'))
     tests = set((ROOT / 'Tests').rglob('*.swift'))
     production = all_swift - tests
-    assert len(production) == 28 and len(tests) == 1, 'Review membership when adding source files'
+    assert len(production) == 29 and len(tests) == 1, 'Review membership when adding source files'
     assert {path for path in paths.values() if path.suffix == '.swift'} == all_swift
 
     for name, expected, product_type in (
