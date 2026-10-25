@@ -13,6 +13,8 @@ Ini masih prototipe berbasis data lokal, bukan layanan streaming musik yang suda
 - App target: `MusicfyIOS`.
 - Test target: `MusicfyIOSTests`.
 - Tidak menggunakan dependency pihak ketiga.
+- Engine playback native: `AVPlayer` melalui `State/PlayerController.swift` (play/pause/stop/seek, durasi aktual, buffering, error, `AVAudioSession`).
+- Belum ada provider audio legal yang tersambung, jadi hasil YouTube Music hanya menampilkan metadata dan status "audio source unavailable".
 - Source Swift dan tes tersedia, tetapi build Xcode dan XCTest belum terverifikasi di macOS.
 
 ## Halaman
@@ -27,9 +29,10 @@ Tujuh halaman tersedia sebagai source:
 - Queue
 - Lyrics
 
-Pencarian hanya memfilter katalog lokal. Pemilihan lagu, favorite, antrean, progres, dan tombol play/pause menggunakan state demonstrasi.
+Pencarian hanya memfilter katalog lokal. Pemilihan lagu, favorite, antrean, progres, dan tombol play/pause menggunakan state demonstrasi untuk katalog lokal, dan engine playback native `AVPlayer` untuk sumber audio yang benar-benar disediakan.
 
-**Tidak ada audio yang diputar.** Belum ada integrasi MusicKit, AVPlayer, InnerTube, backend, autentikasi, atau pencarian provider musik. Data demonstrasi juga tidak disimpan secara permanen.
+**Belum ada sumber audio yang terhubung.** `PlayerController` (AVFoundation) sudah memutar `PlaybackSource` nyata dengan play/pause/seek, durasi aktual, status buffering/error, konfigurasi `AVAudioSession`, dan penanganan interupsi. Namun tidak ada provider audio legal yang tersambung, jadi hasil pencarian YouTube Music tetap menampilkan status "audio source unavailable" dan tidak memutar apa pun. Tidak ada URL audio yang direkayasa dari video id, tidak ada WebView YouTube, dan tidak ada backend.
+
 
 Artwork adalah placeholder yang digambar dengan SwiftUI. Font sistem Apple digunakan sebagai adaptasi tampilan iOS.
 

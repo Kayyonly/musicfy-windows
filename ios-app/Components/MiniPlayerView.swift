@@ -47,17 +47,17 @@ struct MiniPlayerView: View {
                 }
                 .accessibilityLabel("Open Now Playing: \(title), \(artist)")
                 .accessibilityIdentifier("player.open")
-                Button { state.toggleDemoPlayback() } label: {
-                    Image(systemName: state.isDemoPlaying ? "pause.fill" : "play.fill")
+                Button { state.togglePlayback() } label: {
+                    Image(systemName: state.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title3).frame(width: 44, height: 48)
                 }
-                .disabled(state.selectedLiveTrack != nil)
-                .accessibilityLabel(state.selectedLiveTrack == nil ? (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo") : "Open Now Playing for YouTube player controls")
+                .disabled(!state.isLiveAudioAvailable && !state.hasDemoSelection)
+                .accessibilityLabel(miniPlayerPlayLabel)
                 if !dynamicTypeSize.isAccessibilitySize {
                     Button { state.step(1) } label: {
                         Image(systemName: "forward.end.fill").frame(width: 44, height: 48)
                     }
-                    .disabled(state.selectedLiveTrack != nil)
+                    .disabled(state.isLiveTrackSelected)
                     .accessibilityLabel("Next demo track")
                 }
             }
@@ -66,5 +66,15 @@ struct MiniPlayerView: View {
             .frame(minHeight: MusicfySpacing.miniPlayerHeight)
             .modifier(MusicfyGlass(radius: 28))
         }
+    }
+
+    private var miniPlayerPlayLabel: String {
+        if state.isLiveAudioAvailable {
+            return state.player.isPlaying ? "Pause" : "Play"
+        }
+        if state.isLiveTrackSelected {
+            return "Audio source unavailable"
+        }
+        return state.isPlaying ? "Pause silent demo" : "Play silent demo"
     }
 }

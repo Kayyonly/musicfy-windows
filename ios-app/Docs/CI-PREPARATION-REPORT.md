@@ -21,7 +21,7 @@ Dua file Xcode baru:
 - `ios-app/MusicfyIOS.xcodeproj/project.pbxproj`
 - `ios-app/MusicfyIOS.xcodeproj/xcshareddata/xcschemes/MusicfyIOS.xcscheme`
 
-Target **MusicfyIOS** adalah aplikasi iPhone dengan 28 source Swift dari App, Components, Models, Screens, State, dan Theme. Target **MusicfyIOSTests** adalah hosted unit-test bundle dengan hanya `Tests/MusicfyDemoStateTests.swift`; tujuh metode XCTest yang sudah ada tidak diubah. Test menggunakan `@testable import MusicfyIOS`, `TEST_HOST`, `BUNDLE_LOADER`, dan dependency/proxy ke aplikasi. Source app tidak diduplikasi ke target test.
+Target **MusicfyIOS** adalah aplikasi iPhone dengan 31 source Swift dari App, Components, Models, Screens, State, dan Theme. Target **MusicfyIOSTests** adalah hosted unit-test bundle dengan `Tests/MusicfyDemoStateTests.swift` (12 metode XCTest) dan `Tests/PlayerControllerTests.swift` (16 metode XCTest); yang sudah ada tidak diubah. Test menggunakan `@testable import MusicfyIOS`, `TEST_HOST`, `BUNDLE_LOADER`, dan dependency/proxy ke aplikasi. Source app tidak diduplikasi ke target test.
 
 Kedua target memiliki Debug/Release, minimum **iOS 17.0**, Swift language mode **5.0**, `iphoneos iphonesimulator`, dan device family iPhone. Info.plist dihasilkan oleh Xcode; app memakai generated launch screen dan scene manifest. Debug mengaktifkan testability. Shared scheme **MusicfyIOS** membangun kedua target untuk testing dan memasukkan unit-test target dalam TestAction Debug. Tidak ada archive action atau build-for-archiving.
 
@@ -46,12 +46,12 @@ Tidak ada pengunduhan dependency aplikasi atau tooling pihak ketiga; dua action 
 - `ios-app/.gitignore`: membuka ignore untuk helper Python yang disetujui; mengabaikan state Xcode, cache Python, dan keluaran diagnosis.
 - `ios-app/CI/check_project.py`: audit struktur project, semua path dan target membership, signing, dependency, dan shared scheme; hanya Python standard library.
 - `ios-app/CI/select_destination.py`: memilih simulator dari JSON inventaris dan daftar destination scheme, tanpa menjalankan simulator.
-- `ios-app/CI/test_ci_helpers.py`: 11 tes fixture offline untuk pemilihan dan penolakan simulator yang tidak memenuhi syarat.
+- `ios-app/CI/test_ci_helpers.py`: 16 tes fixture offline untuk pemilihan dan penolakan simulator yang tidak memenuhi syarat.
 - `ios-app/Docs/CI-PREPARATION-REPORT.md`: laporan ini. Dokumen prototipe lama dipertahankan sebagai riwayat tanpa ditulis ulang.
 
 ## Fase D — Hasil pemeriksaan dan diff
 
-**Lulus:** parsing OpenStep project, parsing XML scheme, audit graph/referensi dan source membership 28+1, konfigurasi target, sintaks Python, 11 unit test helper Python, parsing YAML 1.2 memakai parser yang sudah tersedia, pemeriksaan kontrak workflow, serta `bash -n` pada semua blok shell. Tidak ada toolchain yang dipasang. Helper prototipe lama tidak dijalankan karena menulis ulang laporan dan memakai asumsi working tree historis.
+**Lulus:** parsing OpenStep project, parsing XML scheme, audit graph/referensi dan source membership 31+2, konfigurasi target, sintaks Python, 16 unit test helper Python, parsing YAML 1.2 memakai parser yang sudah tersedia, pemeriksaan kontrak workflow, serta `bash -n` pada semua blok shell. Tidak ada toolchain yang dipasang. Helper prototipe lama tidak dijalankan karena menulis ulang laporan dan memakai asumsi working tree historis.
 
 **Belum dibuktikan:** penerimaan file oleh Xcode/GitHub Actions, kompilasi Swift, linking, hosted XCTest discovery/execution, boot atau instalasi simulator, tampilan tujuh layar, aksesibilitas, dan kompatibilitas runtime iOS 17. `actionlint` dan Xcode tidak tersedia. Tes Python yang lulus bukan XCTest iOS.
 

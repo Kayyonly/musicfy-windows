@@ -160,13 +160,13 @@ struct NowPlayingView: View {
         VStack(spacing: 8) {
             Slider(value: progressBinding, in: 0...1)
                 .tint(MusicfyTheme.primary)
-                .disabled(state.selectedTrack == nil || state.selectedLiveTrack != nil)
-                .accessibilityLabel("Playback progress preview")
+                .disabled(!state.isLiveAudioAvailable && !state.hasDemoSelection)
+                .accessibilityLabel(state.isLiveAudioAvailable ? "Playback position" : "Playback progress preview")
 
             HStack {
-                Text(timestamp(for: state.progress))
+                Text(timestamp(for: state.isLiveAudioAvailable ? state.player.progressFraction : state.progress))
                 Spacer()
-                Text(state.selectedLiveTrack?.durationText ?? state.selectedTrack?.durationLabel ?? "0:00")
+                Text(durationLabel)
             }
             .font(MusicfyTypography.subtitle)
             .foregroundStyle(MusicfyTheme.secondary)
@@ -177,16 +177,31 @@ struct NowPlayingView: View {
     private var transportControls: some View {
         HStack(spacing: 18) {
             controlButton(symbol: "backward.fill", label: "Previous track", size: 46) { state.step(-1) }
-                .disabled(state.selectedLiveTrack != nil)
-            controlButton(symbol: state.isDemoPlaying ? "pause.fill" : "play.fill", label: state.selectedLiveTrack != nil ? "Playback source not connected" : (state.isDemoPlaying ? "Pause silent demo" : "Play silent demo"), size: 68) {
-                state.toggleDemoPlayback()
+                .disabled(state.isLiveTrackSelected)
+            controlButton(
+                symbol: state.isPlaying ? "pause.fill" : "play.fill",
+                label: playButtonLabel,
+                size: 68
+            ) {
+                state.togglePlayback()
             }
-            .disabled(state.selectedLiveTrack != nil)
+            .disabled(!state.isLiveAudioAvailable && !state.hasDemoSelection)
             controlButton(symbol: "forward.fill", label: "Next track", size: 46) { state.step(1) }
-                .disabled(state.selectedLiveTrack != nil)
+                .disabled(state.isLiveTrackSelected)
         }
         .frame(maxWidth: .infinity)
     }
+
+    private var playButtonLabel: String {
+        if state.isLiveAudioAvailable {
+            return state.player.isPlaying ? "Pause" : "Play"
+        }
+        if state.isLiveTrackSelected {
+            return "Audio source unavailable"
+        }
+        return state.isPlaying ? "Pause silent demo" : "Play silent demo"
+    }
+
 
     private var utilityControls: some View {
         VStack(spacing: 12) {
@@ -216,12 +231,13 @@ struct NowPlayingView: View {
                 navigationLink(.lyrics, title: "Lyrics", symbol: "quote.bubble")
             }
 
-            Text(state.selectedLiveTrack == nil ? "UI demo · no audio" : "Native audio playback not connected yet")
+            Text(playbackStatusText)
                 .font(MusicfyTypography.subtitle)
-                .foregroundStyle(MusicfyTheme.secondary)
+                .foregroundStyle(state.player.errorMessage != nil ? MusicfyTheme.primary : MusicfyTheme.secondary)
                 .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.center)
                 .padding(.top, 2)
-                .accessibilityLabel(state.selectedLiveTrack == nil ? "UI demo, no audio" : "Native audio playback is not connected yet")
+                .accessibilityLabel(playbackStatusText)
         }
     }
 
@@ -260,11 +276,56 @@ struct NowPlayingView: View {
     }
 
     private var progressBinding: Binding<Double> {
-        Binding(get: { state.progress }, set: { state.progress = min(max($0, 0), 1) })
+        Binding(
+            get: {
+                state.isLiveAudioAvailable
+                    ? state.player.progressFraction
+                    : (state.isLiveTrackSelected ? 0 : min(max(state.progress, 0), 1))
+            },
+            set: { state.seek(to: min(max($0, 0), 1)) }
+        )
     }
 
     private func timestamp(for progress: Double) -> String {
-        let seconds = Int((state.selectedTrack?.duration ?? 0) * min(max(progress, 0), 1))
+        let total: TimeInterval
+        if state.isLiveAudioAvailable {
+            total = state.player.duration
+        } else if state.isLiveTrackSelected {
+            // A live result without a source has no real position to report yet.
+            total = 0
+        } else {
+            total = state.selectedTrack?.duration ?? 0
+        }
+        let seconds = Int(total * min(max(progress, 0), 1))
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private var durationLabel: String {
+        if state.isLiveAudioAvailable {
+            let seconds = Int(state.player.duration)
+            return String(format: "%d:%02d", seconds / 60, seconds % 60)
+        }
+        if state.isLiveTrackSelected {
+            return state.selectedLiveTrack?.durationText ?? "0:00"
+        }
+        return state.selectedTrack?.durationLabel ?? "0:00"
+    }
+
+    /// A truthful one-line playback status: buffering, an error, or why a result cannot play.
+    private var playbackStatusText: String {
+        if let reason = state.playbackUnavailableReason { return reason }
+        if let message = state.player.errorMessage { return message }
+        if state.isLiveAudioAvailable {
+            switch state.player.status {
+            case .buffering: return "Buffering…"
+            case .playing: return "Playing from an approved audio source"
+            case .paused: return "Paused"
+            case .loading: return "Preparing audio…"
+            case .ready: return "Ready to play"
+            case .failed(let message): return message
+            case .idle: return "Ready"
+            }
+        }
+        return state.isLiveTrackSelected ? "Audio source unavailable for this result" : "UI demo · no audio"
     }
 }

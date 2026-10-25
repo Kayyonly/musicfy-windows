@@ -32,8 +32,10 @@ enum PlayerDestination: String, Identifiable {
 
 @MainActor
 final class MusicfyDemoState: ObservableObject {
-    init() {
+    init(playbackSourceProvider: PlaybackSourceProviding = UnavailablePlaybackSourceProvider()) {
+        self.playbackSourceProvider = playbackSourceProvider
 #if DEBUG
+
         // Launch-argument routing is used only by the simulator screenshot workflow.
         // Normal app launches and Release builds keep the regular Home entry point.
         let arguments = ProcessInfo.processInfo.arguments
@@ -55,6 +57,21 @@ final class MusicfyDemoState: ObservableObject {
             }
         }
 #endif
+        // Re-publish player changes so views bound to this state refresh when playback moves.
+        player.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
+
+    private var cancellables = Set<AnyCancellable>()
+
+    /// Ends playback deterministically and releases the player's observers. `deinit` is not
+    /// actor-isolated, so cleanup is explicit rather than pushed into a deinitializer.
+    /// Idempotent; safe to call from the app lifecycle.
+    func endPlayback() {
+        sourceLoadTask?.cancel()
+        sourceLoadTask = nil
+        player.invalidate()
     }
 
     @Published var tab: MusicfyTab = .home
@@ -69,16 +86,44 @@ final class MusicfyDemoState: ObservableObject {
     @Published var isShuffle = false
     @Published var isRepeat = false
 
+    /// Native playback engine. It only plays a real, supplied audio source; without one
+    /// selected live results report an unavailable state instead of pretending to play.
+    let player = PlayerController()
+    /// The seam an approved audio provider plugs into. The default supplies nothing.
+    private let playbackSourceProvider: PlaybackSourceProviding
+    /// Why the currently selected live result cannot play (nil while a source is loaded).
+    @Published private(set) var playbackUnavailableReason: String?
+    private var sourceLoadTask: Task<Void, Never>?
+
+
     let tracks = DemoCatalog.tracks
     var selectedTrack: MockTrack? { tracks.first { $0.id == selectedID } }
     var queue: [MockTrack] { tracks }
     var isFavorite: Bool { selectedID.map { favoriteIDs.contains($0) } ?? false }
 
+    /// True while a silent demo catalog track is the current selection. Used to decide
+    /// whether the demo transport is a valid target at all.
+    var hasDemoSelection: Bool { !isLiveTrackSelected && selectedTrack != nil }
+
+    /// True while a real audio source is loaded and the native player owns the transport.
+    var isLiveAudioAvailable: Bool { selectedLiveTrack != nil && player.hasMedia }
+
+    /// True whenever a live YouTube Music result is selected, whether or not a playable
+    /// source was supplied. While this is true the silent demo catalog must not take over.
+    var isLiveTrackSelected: Bool { selectedLiveTrack != nil }
+
+    /// The transport's playing state. A selected live result owns the transport even when
+    /// its audio is unavailable, so the silent demo flag is only consulted for demo tracks.
+    var isPlaying: Bool { isLiveTrackSelected ? player.isPlaying : isDemoPlaying }
+
     func select(_ track: MockTrack) {
+        sourceLoadTask?.cancel()
         selectedLiveTrack = nil
         selectedID = track.id
         progress = 0
         isDemoPlaying = false
+        playbackUnavailableReason = nil
+        player.load(nil)
     }
 
     func selectLiveTrack(_ track: InnerTubeTrack) {
@@ -87,15 +132,75 @@ final class MusicfyDemoState: ObservableObject {
         progress = 0
         isDemoPlaying = false
         showsPlayer = true
+        playbackUnavailableReason = nil
+        loadPlaybackSource(for: track)
     }
+
+    /// Asks the (approved) provider for a real audio source. Nothing is fabricated: when
+    /// the provider has no source, the result is reported as unavailable rather than played.
+    private func loadPlaybackSource(for track: InnerTubeTrack) {
+        sourceLoadTask?.cancel()
+        player.load(nil)
+        sourceLoadTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.sourceLoadTask = nil }
+            do {
+                let source = try await self.playbackSourceProvider.source(for: track)
+                guard !Task.isCancelled, self.selectedLiveTrack?.id == track.id else { return }
+                if let source {
+                    self.playbackUnavailableReason = nil
+                    self.player.load(source)
+                } else {
+                    self.playbackUnavailableReason =
+                        "No supported audio source for this result yet. Metadata search works; playback needs an approved provider."
+                }
+            } catch {
+                guard !Task.isCancelled, self.selectedLiveTrack?.id == track.id else { return }
+                self.playbackUnavailableReason = error.localizedDescription
+            }
+        }
+    }
+
+    /// Test seam: awaits the in-flight provider task so tests synchronize on real
+    /// completion instead of guessing with executor yields.
+    func awaitPlaybackSourceLoad() async {
+        await sourceLoadTask?.value
+    }
+
     func toggleFavorite() {
         guard let id = selectedID else { return }
         if favoriteIDs.contains(id) { favoriteIDs.remove(id) } else { favoriteIDs.insert(id) }
     }
+
+    /// One transport entry point. A selected live result never falls through to the
+    /// silent demo: when its audio source is unavailable, pressing play is a no-op.
+    func togglePlayback() {
+        guard !isLiveTrackSelected else {
+            player.togglePlayPause()
+            return
+        }
+        toggleDemoPlayback()
+    }
+
+    /// Silent demo transport. It is refused while a live result is selected so no caller
+    /// can fake playback for a YouTube Music track.
     func toggleDemoPlayback() {
+        guard !isLiveTrackSelected else { return }
         guard selectedTrack != nil else { return }
         isDemoPlaying.toggle()
     }
+
+    /// Seeks the live player when a live result is selected, otherwise the demo progress.
+    /// A selected live result never advances the silent demo progress.
+    func seek(to fraction: Double) {
+        let clamped = min(max(fraction, 0), 1)
+        guard !isLiveTrackSelected else {
+            player.seek(toFraction: clamped)
+            return
+        }
+        progress = clamped
+    }
+
     func step(_ offset: Int) {
         guard !tracks.isEmpty else { return }
         let index = tracks.firstIndex { $0.id == selectedID } ?? 0

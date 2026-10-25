@@ -312,6 +312,8 @@
 			"children" = (
 				"D787CACF42F50B5330D8DF55",
 				"A17C0DE10000000000000002",
+				"A17C0DE20000000000000002",
+				"A17C0DE30000000000000002",
 			);
 			"path" = "State";
 			"sourceTree" = "<group>";
@@ -370,6 +372,7 @@
 			"isa" = "PBXGroup";
 			"children" = (
 				"6B04B30D5E372C2E7EC3DFE4",
+				"A17C0DE40000000000000002",
 			);
 			"path" = "Tests";
 			"sourceTree" = "<group>";
@@ -499,6 +502,8 @@
 				"5ED6405F1001621F29F9E522",
 				"D8C32C93BED936B4990723E3",
 				"A17C0DE10000000000000001",
+				"A17C0DE20000000000000001",
+				"A17C0DE30000000000000001",
 				"5EFF869B84B9D1765EC47402",
 				"783FC6AA1CD7BBCEA7DA43BB",
 				"B656CB0EED45E5363D9D0336",
@@ -609,6 +614,7 @@
 			"buildActionMask" = 2147483647;
 			"files" = (
 				"EAEBDB1F133DBCBF3D892145",
+				"A17C0DE40000000000000001",
 			);
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
@@ -752,7 +758,36 @@
 			"path" = "InnerTubeSearchService.swift";
 			"sourceTree" = "<group>";
 		};
-
+		"A17C0DE20000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A17C0DE20000000000000002";
+		};
+		"A17C0DE20000000000000002" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PlayerController.swift";
+			"sourceTree" = "<group>";
+		};
+		"A17C0DE30000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A17C0DE30000000000000002";
+		};
+		"A17C0DE30000000000000002" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PlaybackSourceProvider.swift";
+			"sourceTree" = "<group>";
+		};
+		"A17C0DE40000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A17C0DE40000000000000002";
+		};
+		"A17C0DE40000000000000002" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PlayerControllerTests.swift";
+			"sourceTree" = "<group>";
+		};
 	};
 	"rootObject" = "244210E48437B6556980A702";
 }

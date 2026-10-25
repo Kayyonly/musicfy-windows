@@ -201,7 +201,7 @@ def audit():
     tests = set((ROOT / 'Tests').rglob('*.swift'))
     production = all_swift - tests
 
-    assert len(production) == 29 and len(tests) == 1, (
+    assert len(production) == 31 and len(tests) == 2, (
         'Review membership when adding source files'
     )
 

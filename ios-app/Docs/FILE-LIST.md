@@ -1,6 +1,6 @@
 # Daftar file baru Musicfy iOS
 
-Semua **37 berkas baru** berada di `ios-app/`. Terdapat 28 source Swift produksi, 1 source XCTest, serta 8 berkas dokumentasi/bukti/skrip. Tidak ada file lama diubah.
+Semua **37 berkas baru** berada di `ios-app/`. Terdapat 31 source Swift produksi, 2 source XCTest (28 metode XCTest), serta 8 berkas dokumentasi/bukti/skrip. Tidak ada file lama diubah.
 
 | Path relatif terhadap ios-app/ | Fungsi |
 |---|---|
@@ -31,13 +31,16 @@ Semua **37 berkas baru** berada di `ios-app/`. Terdapat 28 source Swift produksi
 | `Screens/HomeView.swift` | Hero random plays dan section/carousel lokal. |
 | `Screens/LibraryView.swift` | Pencarian library kosong, provider/local cards informasional. |
 | `Screens/LyricsView.swift` | Lirik orisinal dengan highlight manual dan backdrop. |
-| `Screens/NowPlayingView.swift` | Player senyap, metadata, favorite, progress dan transport. |
+| `Screens/NowPlayingView.swift` | Player senyap/metadata, favorite, progress native dan transport. |
 | `Screens/ProfileView.swift` | Kartu identitas nonpersonal, statistik demo, versi/About. |
 | `Screens/QueueView.swift` | Antrean lokal dan pemilihan track. |
 | `Screens/SearchView.swift` | Browse mood, query/filter metadata, history dan hasil lokal. |
 | `Scripts/verify_static.py` | Pemeriksaan offline struktural dan checksum baseline. |
-| `State/MusicfyDemoState.swift` | State tab, track, favorite, progres, history, kontrol demo. |
-| `Tests/MusicfyDemoStateTests.swift` | Tujuh metode XCTest, disediakan tetapi belum dijalankan. |
+| `State/MusicfyDemoState.swift` | State tab, track, favorite, progres, history, kontrol demo, dan integrasi playback. |
+| `State/PlayerController.swift` | Engine playback native AVPlayer: load/play/pause/seek, durasi, buffering, error, AVAudioSession. |
+| `State/PlaybackSourceProvider.swift` | Seam provider sumber audio; default tidak menyediakan sumber apa pun. |
+| `Tests/MusicfyDemoStateTests.swift` | Dua belas XCTest state demo, search, navigasi dan pemilihan track live. |
+| `Tests/PlayerControllerTests.swift` | Enam belas XCTest playback: idle, transport inert, seek clamp, jalur sukses PlaybackSource, siklus invalidate, dan integrasi state/provider. |
 | `Theme/MusicfySpacing.swift` | Token spacing, radius, control heights dan minimum touch. |
 | `Theme/MusicfyTheme.swift` | Token warna dan palet placeholder. |
 | `Theme/MusicfyTypography.swift` | Typography SF/system sebagai adaptasi Inter Android. |
